@@ -155,12 +155,11 @@ jobs:
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           set -euo pipefail
-          shopt -s nullglob
           refs=()
-          for file in digests/digest-*; do
+          while IFS= read -r file; do
             digest=$(cat "$file")
             refs+=("${REGISTRY}/${IMAGE_NAME}@${digest}")
-          done
+          done < <(find digests -type f -name 'digest-*')
           test "${#refs[@]}" -eq 2
           tags=()
           while IFS= read -r tag; do
