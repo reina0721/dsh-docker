@@ -1,30 +1,82 @@
 # syntax=docker/dockerfile:1.7
 
-ARG GO_VERSION=1.26.5
-ARG NODE_VERSION=24.18.0
+ARG NODE_IMAGE=node:24.18.0-bookworm-slim
+ARG GO_IMAGE=golang:1.26.5-bookworm
+ARG RUST_IMAGE=rust:1.90.0-bookworm
+# BuildKit supplies these for multi-arch builds. The fallbacks keep a plain
+# single-platform `docker build` working without overriding BuildKit's values.
+ARG BUILDPLATFORM
 
-FROM golang:${GO_VERSION}-bookworm AS go-toolchain
-FROM node:${NODE_VERSION}-bookworm-slim
+# =============================================================================
+# Rust gateway / entrypoint
+# =============================================================================
+FROM --platform=${BUILDPLATFORM:-linux/amd64} ${RUST_IMAGE} AS gateway-build
+
+ARG TARGETARCH
+ARG CARGO_REGISTRY=
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+COPY assets ./assets
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    set -eux; \
+    if [ -n "${CARGO_REGISTRY}" ]; then \
+        case "${CARGO_REGISTRY}" in \
+            rsproxy) registry="https://rsproxy.cn/index/" ;; \
+            *) registry="${CARGO_REGISTRY}" ;; \
+        esac; \
+        printf '[source.crates-io]\nreplace-with = "mirror"\n[source.mirror]\nregistry = "sparse+%s"\n' "${registry}" \
+            > /usr/local/cargo/config.toml; \
+    fi; \
+    case "${TARGETARCH:-amd64}" in \
+        amd64) \
+            triple="x86_64-unknown-linux-gnu" ;; \
+        arm64) \
+            apt-get update; \
+            apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross; \
+            triple="aarch64-unknown-linux-gnu"; \
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc; \
+            export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc; \
+            export AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar ;; \
+        *) echo "unsupported TARGETARCH=${TARGETARCH:-amd64}" >&2; exit 1 ;; \
+    esac; \
+    rustup target add "${triple}" || true; \
+    cargo build --release --locked -p dsh-gateway --bin dsh-entrypoint --target "${triple}"; \
+    mkdir -p /out; \
+    cp "target/${triple}/release/dsh-entrypoint" /out/dsh-entrypoint; \
+    chmod 0755 /out/dsh-entrypoint
+
+# =============================================================================
+# Go toolchain (dev target only)
+# =============================================================================
+FROM ${GO_IMAGE} AS go-toolchain
+
+# =============================================================================
+# Runtime / slim target
+# =============================================================================
+FROM ${NODE_IMAGE} AS runtime
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG RUST_TOOLCHAIN=stable
+ARG BUILD_MIRROR=global
+ARG APT_MIRROR=
+ARG NPM_REGISTRY=
 ARG PNPM_VERSION=11.7.0
 ARG DSH_VERSION=latest
-ARG INSTALL_GO_DEV_TOOLS=true
+ARG VERSION=dev
+ARG REVISION=unknown
+ARG CREATED=unknown
 
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
     TZ=UTC \
     HOME=/home/node \
     XDG_CACHE_HOME=/home/node/.cache \
-    GOPATH=/home/node/go \
-    GOMODCACHE=/home/node/go/pkg/mod \
-    GOCACHE=/home/node/.cache/go-build \
-    RUSTUP_HOME=/home/node/.rustup \
-    CARGO_HOME=/home/node/.cargo \
-    NPM_CONFIG_PREFIX=/home/node/.local \
+    NPM_CONFIG_PREFIX=/opt/dsh \
     DSH_HOME=/home/node/.dsh \
     DSH_PERMISSION_MODE=workspace-write \
     DSH_TELEMETRY_DISABLED=1 \
@@ -32,11 +84,9 @@ ENV LANG=C.UTF-8 \
     NPM_CONFIG_FUND=false \
     NPM_CONFIG_UPDATE_NOTIFIER=false \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PATH=/usr/local/go/bin:/home/node/go/bin:/home/node/.cargo/bin:/home/node/.local/bin:${PATH}
+    PATH=/opt/dsh/bin:/home/node/.local/bin:${PATH}
 
-COPY --from=go-toolchain /usr/local/go /usr/local/go
-
-# BuildKit apt caches survive local rebuilds even when this layer must run again.
+# Keep downloaded packages for BuildKit apt caches.
 RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
     printf 'Binary::apt::APT::Keep-Downloaded-Packages "true";\n' \
       > /etc/apt/apt.conf.d/keep-cache
@@ -44,6 +94,10 @@ RUN rm -f /etc/apt/apt.conf.d/docker-clean; \
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     set -eux; \
+    if [ "${BUILD_MIRROR}" = "cn" ] && [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i "s|deb.debian.org|${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}|g" \
+            /etc/apt/sources.list.d/debian.sources; \
+    fi; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         bash \
@@ -56,24 +110,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         openssh-client \
         build-essential \
         make \
-        cmake \
-        ninja-build \
         pkg-config \
-        clang \
-        clangd \
-        gdb \
-        strace \
-        libssl-dev \
-        openssl \
-        zlib1g-dev \
-        libsqlite3-dev \
-        sqlite3 \
-        protobuf-compiler \
         python3 \
         python3-pip \
         python3-venv \
         python-is-python3 \
-        pipx \
         jq \
         ripgrep \
         fd-find \
@@ -89,55 +130,33 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         zip \
         xz-utils \
         zstd \
-        shellcheck \
         iproute2 \
         procps \
         lsof \
         tini; \
     ln -sf /usr/bin/fdfind /usr/local/bin/fd; \
-    git lfs install --system; \
-    go version
+    git lfs install --system
 
 RUN set -eux; \
     mkdir -p \
         /workspace \
         /home/node/.dsh \
         /home/node/.local/bin \
-        /home/node/.cache/go-build \
+        /opt/dsh \
+        /home/node/.cache \
+        /home/node/.npm \
         /home/node/go/bin \
-        /home/node/go/pkg/mod \
-        /home/node/.cargo \
-        /home/node/.rustup \
-        /home/node/.npm; \
-    chown -R node:node /workspace /home/node; \
+        /home/node/go/pkg/mod; \
+    chown -R node:node /workspace /home/node /opt/dsh; \
     git config --system --add safe.directory /workspace
 
 USER node
-WORKDIR /workspace
-
-# Do not cache-mount RUSTUP_HOME/tmp or RUSTUP_HOME/toolchains.
-# rustup installs by renaming files from tmp into toolchains; separate
-# filesystems can fail with EXDEV ("Invalid cross-device link").
-# The completed RUN layer is already cached normally by BuildKit.
-RUN set -eux; \
-    curl --proto '=https' --tlsv1.2 --fail --show-error --silent \
-        https://sh.rustup.rs -o /tmp/rustup-init.sh; \
-    sh /tmp/rustup-init.sh \
-        -y \
-        --no-modify-path \
-        --profile minimal \
-        --default-toolchain "${RUST_TOOLCHAIN}"; \
-    rm -f /tmp/rustup-init.sh; \
-    rustup component add rustfmt clippy rust-analyzer; \
-    rustc --version; \
-    cargo --version; \
-    rustfmt --version; \
-    cargo clippy --version; \
-    rust-analyzer --version
 
 RUN --mount=type=cache,target=/home/node/.npm,uid=1000,gid=1000 \
     set -eux; \
-    npm install --global --no-audit --no-fund \
+    registry_arg=""; \
+    if [ -n "${NPM_REGISTRY}" ]; then registry_arg="--registry=${NPM_REGISTRY}"; fi; \
+    npm install --global --no-audit --no-fund ${registry_arg} \
         "pnpm@${PNPM_VERSION}" \
         typescript@latest \
         tsx@latest \
@@ -147,28 +166,126 @@ RUN --mount=type=cache,target=/home/node/.npm,uid=1000,gid=1000 \
     pnpm --version; \
     dsh --version
 
+USER root
+
+COPY --from=gateway-build --chmod=0755 /out/dsh-entrypoint /usr/local/bin/dsh-entrypoint
+COPY LICENSE-MIT LICENSE-APACHE /usr/share/licenses/dsh-docker/
+
+LABEL org.opencontainers.image.title="DSH Docker" \
+      org.opencontainers.image.description="DeepSeek Harness development environment with a Rust gateway" \
+      org.opencontainers.image.source="https://github.com/rin721/dsh-docker" \
+      org.opencontainers.image.documentation="https://github.com/rin721/dsh-docker#readme" \
+      org.opencontainers.image.licenses="MIT OR Apache-2.0" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.created="${CREATED}" \
+      io.github.rin721.dsh-docker.runtime="2" \
+      io.github.rin721.dsh-docker.cli-compat="2" \
+      io.github.rin721.dsh-docker.variant="slim"
+
+USER node
+WORKDIR /workspace
+EXPOSE 3080
+STOPSIGNAL SIGTERM
+HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=5 \
+    CMD ["/usr/local/bin/dsh-entrypoint", "healthcheck"]
+ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/dsh-entrypoint"]
+
+# =============================================================================
+# Dev target: full toolchains for interactive coding
+# =============================================================================
+FROM runtime AS dev
+
+USER root
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG BUILD_MIRROR=global
+ARG APT_MIRROR=
+ARG NODE_VERSION=24.18.0
+ARG GO_VERSION=1.26.5
+ARG RUST_VERSION=1.90.0
+ARG PNPM_VERSION=11.7.0
+ARG DSH_VERSION=latest
+ARG INSTALL_GO_DEV_TOOLS=true
+ARG NPM_REGISTRY=
+ARG PIP_INDEX_URL=
+ARG GOPROXY=
+ARG RUSTUP_DIST_SERVER=
+ARG VERSION=dev
+ARG REVISION=unknown
+ARG CREATED=unknown
+
+ENV GOPATH=/home/node/go \
+    GOMODCACHE=/home/node/go/pkg/mod \
+    GOCACHE=/home/node/.cache/go-build \
+    RUSTUP_HOME=/home/node/.rustup \
+    CARGO_HOME=/home/node/.cargo \
+    PATH=/opt/dsh/bin:/usr/local/go/bin:/home/node/go/bin:/home/node/.cargo/bin:/home/node/.local/bin:${PATH}
+
+COPY --from=go-toolchain /usr/local/go /usr/local/go
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    set -eux; \
+    if [ "${BUILD_MIRROR}" = "cn" ] && [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i "s|deb.debian.org|${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}|g" \
+            /etc/apt/sources.list.d/debian.sources; \
+    fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        cmake \
+        ninja-build \
+        clang \
+        clangd \
+        gdb \
+        strace \
+        libssl-dev \
+        openssl \
+        zlib1g-dev \
+        libsqlite3-dev \
+        sqlite3 \
+        protobuf-compiler \
+        pipx \
+        shellcheck; \
+    go version
+
+USER node
+
+# Do not cache-mount RUSTUP_HOME/toolchains: rustup renames from tmp into
+# toolchains, and separate filesystems can fail with EXDEV.
+RUN set -eux; \
+    curl --proto '=https' --tlsv1.2 --fail --show-error --silent \
+        https://sh.rustup.rs -o /tmp/rustup-init.sh; \
+    if [ -n "${RUSTUP_DIST_SERVER}" ]; then \
+        export RUSTUP_DIST_SERVER; \
+        export RUSTUP_UPDATE_ROOT="${RUSTUP_DIST_SERVER}/rustup"; \
+        sh /tmp/rustup-init.sh -y --no-modify-path --profile minimal --default-toolchain "${RUST_VERSION}"; \
+    else \
+        sh /tmp/rustup-init.sh -y --no-modify-path --profile minimal --default-toolchain "${RUST_VERSION}"; \
+    fi; \
+    rm -f /tmp/rustup-init.sh; \
+    rustup component add rustfmt clippy rust-analyzer; \
+    rustc --version; \
+    cargo --version
+
 RUN --mount=type=cache,target=/home/node/go/pkg/mod,uid=1000,gid=1000 \
     --mount=type=cache,target=/home/node/.cache/go-build,uid=1000,gid=1000 \
     set -eux; \
-    if [[ "${INSTALL_GO_DEV_TOOLS}" == "true" ]]; then \
+    if [ "${INSTALL_GO_DEV_TOOLS}" = "true" ]; then \
+        if [ -n "${GOPROXY}" ]; then export GOPROXY="${GOPROXY}"; fi; \
         go install golang.org/x/tools/gopls@latest; \
         go install golang.org/x/tools/cmd/goimports@latest; \
         go install github.com/go-delve/delve/cmd/dlv@latest; \
         go install honnef.co/go/tools/cmd/staticcheck@latest; \
         go install github.com/go-task/task/v3/cmd/task@latest; \
-    fi
+    fi; \
+    go version
 
-# Runtime proxy files are copied after the expensive toolchain layers.
-# Editing Host/Origin compatibility logic therefore does not invalidate
-# Rust, npm, or Go installation layers.
-USER root
-COPY --chmod=0755 start-dsh-web.sh /usr/local/bin/start-dsh-web
-COPY --chmod=0644 dsh-web-proxy.mjs dsh-http-compat.js /usr/local/lib/
+LABEL org.opencontainers.image.title="DSH Docker (dev)" \
+      io.github.rin721.dsh-docker.variant="dev" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.created="${CREATED}"
+
 USER node
-
-LABEL org.opencontainers.image.source="https://github.com/rin721/dsh-docker"
-
-EXPOSE 3080
-
-ENTRYPOINT ["/usr/bin/tini", "-g", "--"]
-CMD ["bash", "/usr/local/bin/start-dsh-web"]
+WORKDIR /workspace

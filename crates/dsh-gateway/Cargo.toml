@@ -1,0 +1,40 @@
+[package]
+name = "dsh-gateway"
+description = "Rust reverse proxy and container entrypoint for DSH Docker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "dsh_gateway"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dsh-entrypoint"
+path = "src/bin/dsh-entrypoint.rs"
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+bytes.workspace = true
+dsh-auth = { path = "../dsh-auth", version = "2.0.0" }
+dsh-config = { path = "../dsh-config", version = "2.0.0" }
+futures-util.workspace = true
+hex.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

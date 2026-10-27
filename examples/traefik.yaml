@@ -1,0 +1,24 @@
+# Example Traefik file-provider configuration.
+# Point the router at a DSH Docker deployment listening on 127.0.0.1:3080.
+
+http:
+  routers:
+    dsh:
+      rule: "Host(`dsh.example.com`)"
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      service: dsh
+
+  services:
+    dsh:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:3080"
+        passHostHeader: true
+
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12

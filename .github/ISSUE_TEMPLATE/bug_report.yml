@@ -1,0 +1,47 @@
+name: Bug report
+description: Report a reproducible problem with DSH Docker
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please run `dshctl doctor --network` and include the output. Redact secrets.
+        Security issues must use a private advisory instead.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `dshctl version` and the image tag/digest
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: OS, architecture, Docker Engine, Docker Compose version
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and logs
+      description: Include `dshctl logs --tail 200` output with secrets removed
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: dshctl doctor output
+      render: shell

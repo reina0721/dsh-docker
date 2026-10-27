@@ -1,10 +1,9 @@
+x-dsh-docker: "2"
+
 services:
   dsh:
-    image: "${DSH_IMAGE:-ghcr.io/rin721/dsh-docker:latest}"
+    image: "${DSH_IMAGE:-ghcr.io/rin721/dsh-docker:2}"
     restart: unless-stopped
-    # Execute through bash so a host filesystem that lost the +x bit on
-    # the bind-mounted launcher still cannot break container startup.
-    command: ["bash", "/usr/local/bin/start-dsh-web"]
     working_dir: /workspace
     environment:
       DSH_HOME: /home/node/.dsh
@@ -12,6 +11,15 @@ services:
       DSH_TELEMETRY_DISABLED: "${DSH_TELEMETRY_DISABLED:-1}"
       DSH_HTTP_COMPAT_SHIM: "${DSH_HTTP_COMPAT_SHIM:-true}"
       DSH_PERSIST_HOME: /home/node/.persist
+      DSH_AUTH_FILE: /home/node/.dsh-auth/users.htpasswd
+      DSH_PROXY_HOST: "${DSH_PROXY_HOST:-0.0.0.0}"
+      DSH_PROXY_PORT: "${DSH_PROXY_PORT:-3080}"
+      DSH_INTERNAL_HOST: "${DSH_INTERNAL_HOST:-127.0.0.1}"
+      DSH_INTERNAL_PORT: "${DSH_INTERNAL_PORT:-3079}"
+      DSH_LOG_LEVEL: "${DSH_LOG_LEVEL:-info}"
+      DSH_LOG_FORMAT: "${DSH_LOG_FORMAT:-text}"
+      DSH_GATEWAY_MAX_HTML_BYTES: "${DSH_GATEWAY_MAX_HTML_BYTES:-8388608}"
+      AUTH_REALM: "${AUTH_REALM:-DeepSeek Harness}"
       XDG_CONFIG_HOME: /home/node/.config
       XDG_DATA_HOME: /home/node/.local/share
       XDG_STATE_HOME: /home/node/.local/state
@@ -19,7 +27,9 @@ services:
       NODE_USE_ENV_PROXY: "${NODE_USE_ENV_PROXY:-1}"
       HTTP_PROXY: "${HTTP_PROXY:-}"
       HTTPS_PROXY: "${HTTPS_PROXY:-}"
-      NO_PROXY: "${NO_PROXY:-localhost,127.0.0.1,dsh,gateway}"
+      NO_PROXY: "${NO_PROXY:-localhost,127.0.0.1,dsh}"
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${DSH_PORT:-3080}:${DSH_PROXY_PORT:-3080}"
     volumes:
       - type: bind
         source: "${RUNTIME_DIR:-./.runtime}/workspace"
@@ -31,53 +41,25 @@ services:
       - type: bind
         source: "${RUNTIME_DIR:-./.runtime}/home"
         target: /home/node/.persist
-      # Runtime bridge files are mounted from the repository so proxy/security
-      # fixes do not require rebuilding the heavy development image.
+      # Mount the directory so an atomic user-file rename is visible without
+      # restarting the container.
       - type: bind
-        source: ./start-dsh-web.sh
-        target: /usr/local/bin/start-dsh-web
-        read_only: true
-      - type: bind
-        source: ./dsh-web-proxy.mjs
-        target: /usr/local/lib/dsh-web-proxy.mjs
-        read_only: true
-      - type: bind
-        source: ./dsh-http-compat.js
-        target: /usr/local/lib/dsh-http-compat.js
+        source: "${RUNTIME_DIR:-./.runtime}/auth"
+        target: /home/node/.dsh-auth
         read_only: true
     expose:
       - "3080"
-    networks:
-      - backend
     stdin_open: true
     tty: true
-    stop_grace_period: 15s
+    stop_grace_period: 20s
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3080/ >/dev/null || exit 1"]
+      test: ["CMD", "/usr/local/bin/dsh-entrypoint", "healthcheck"]
       interval: 15s
       timeout: 5s
-      retries: 10
-      start_period: 30s
-
-  gateway:
-    image: "caddy:${GATEWAY_CADDY_VERSION:-2.11.4}"
-    restart: unless-stopped
-    depends_on:
-      dsh:
-        condition: service_healthy
-    environment:
-      AUTH_REALM: "${AUTH_REALM:-DeepSeek Harness}"
-    ports:
-      - "${BIND_ADDRESS:-127.0.0.1}:${DSH_PORT:-3080}:3080"
-    volumes:
-      - ./Caddyfile.gateway:/etc/caddy/Caddyfile:ro
-      - type: bind
-        source: "${RUNTIME_DIR:-./.runtime}/auth/users.caddy"
-        target: /etc/caddy/auth/users.caddy
-        read_only: true
-    networks:
-      - backend
-
-networks:
-  backend:
-    driver: bridge
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

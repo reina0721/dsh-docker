@@ -1,55 +1,58 @@
-.PHONY: deploy update rebuild check doctor self-test prepare-release repair-permissions check-image fix-home migrate-home backup stop user users remove-user build shell
+.PHONY: build fmt lint test check image image-slim deploy up down stop status doctor backup restore shell completions
 
-deploy:
-	bash ./scripts/deploy.sh
-
-update:
-	bash ./scripts/update.sh
-
-rebuild:
-	bash ./scripts/rebuild.sh
-
-check:
-	bash ./scripts/check.sh
-
-doctor:
-	bash ./scripts/doctor.sh
-
-self-test:
-	bash ./scripts/self-test.sh
-
-prepare-release:
-	bash ./scripts/prepare-release.sh
-
-repair-permissions:
-	bash ./scripts/repair-permissions.sh
-
-fix-home:
-	bash ./scripts/fix-home-permissions.sh
-
-migrate-home:
-	bash ./scripts/migrate-home-state.sh
-
-backup:
-	bash ./scripts/backup.sh
-
-check-image:
-	bash ./scripts/check-image.sh
-
-stop:
-	bash ./scripts/stop.sh
-
-user:
-	bash ./scripts/create-user.sh
-
-users:
-	bash ./scripts/list-users.sh
-
-remove-user:
-	bash ./scripts/remove-user.sh
+CARGO ?= cargo
 
 build:
-	DSH_IMAGE_MODE=build bash ./scripts/rebuild.sh
+	$(CARGO) build --workspace --release --locked
+
+fmt:
+	$(CARGO) fmt --all
+
+lint:
+	$(CARGO) clippy --workspace --all-targets --all-features -- -D warnings
+
+test:
+	$(CARGO) test --workspace --locked
+
+check: fmt lint test
+	$(CARGO) fmt --all -- --check
+	docker compose config >/dev/null
+
+image:
+	docker build --target dev -t dsh-docker:dev .
+
+image-slim:
+	docker build --target runtime -t dsh-docker:slim .
+
+deploy:
+	$(CARGO) run --release -p dshctl -- deploy
+
+up:
+	$(CARGO) run --release -p dshctl -- up
+
+down:
+	$(CARGO) run --release -p dshctl -- down
+
+stop:
+	$(CARGO) run --release -p dshctl -- stop
+
+status:
+	$(CARGO) run --release -p dshctl -- status
+
+doctor:
+	$(CARGO) run --release -p dshctl -- doctor
+
+backup:
+	$(CARGO) run --release -p dshctl -- backup
+
+restore:
+	@test -n "$(ARCHIVE)" || (echo "usage: make restore ARCHIVE=path/to/backup.tar.gz" >&2; exit 1)
+	$(CARGO) run --release -p dshctl -- restore "$(ARCHIVE)" --yes
 
 shell:
 	docker compose exec dsh bash
+
+completions:
+	$(CARGO) run --release -p dshctl -- completion bash > dshctl.bash
+	$(CARGO) run --release -p dshctl -- completion zsh > _dshctl
+	$(CARGO) run --release -p dshctl -- completion fish > dshctl.fish

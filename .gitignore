@@ -10,12 +10,21 @@ compose.override.yml
 docker-compose.override.yaml
 docker-compose.override.yml
 
+# Build artifacts
+/target/
+/dist/
+/dshctl.bash
+/_dshctl
+/dshctl.fish
+
 # Archives / generated release files
 *.zip
 *.tar.gz
 *.tgz
 *.sha256
 SHA256SUMS
+*.sig
+*.bak-*
 
 # Logs / temp
 *.log
@@ -29,11 +38,9 @@ logs/
 
 # Common development artifacts
 node_modules/
-dist/
 build/
 coverage/
 .pnpm-store/
-target/
 bin/
 __pycache__/
 .venv/

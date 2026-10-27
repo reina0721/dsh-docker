@@ -1,0 +1,138 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+env:
+  CARGO_TERM_COLOR: always
+  REPO: rin721/dsh-docker
+
+jobs:
+  version:
+    name: Verify version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match Cargo version
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          grep -Eq "^version = \"${version}\"$" Cargo.toml
+          echo "Releasing ${version}"
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            archive: tar.gz
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            archive: tar.gz
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            archive: tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.90.0
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install musl tools
+        if: contains(matrix.target, 'linux-musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+      - name: Build
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "$TARGET" == *"linux-musl"* ]]; then
+            export CC_x86_64_unknown_linux_musl=musl-gcc
+            export CC_aarch64_unknown_linux_musl=musl-gcc
+          fi
+          cargo build --release --locked -p dshctl --target "$TARGET"
+      - name: Package (Unix)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd "target/${{ matrix.target }}/release"
+          cp ../../../LICENSE-MIT .
+          cp ../../../LICENSE-APACHE .
+          tar -czf "${GITHUB_WORKSPACE}/dshctl-${{ matrix.target }}.tar.gz" dshctl LICENSE-MIT LICENSE-APACHE
+      - name: Package (Windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "target/${{ matrix.target }}/release/dshctl.exe", "LICENSE-MIT", "LICENSE-APACHE" -DestinationPath "dshctl-${{ matrix.target }}.zip"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dshctl-${{ matrix.target }}
+          path: dshctl-${{ matrix.target }}.${{ matrix.archive }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd dist
+          sha256sum dshctl-* > SHA256SUMS
+          cat SHA256SUMS
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign checksums
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd dist
+          cosign sign-blob --yes SHA256SUMS \
+            --output-signature SHA256SUMS.sig \
+            --output-certificate SHA256SUMS.pem
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/dshctl-*
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/dshctl-*
+            dist/SHA256SUMS
+            dist/SHA256SUMS.sig
+            dist/SHA256SUMS.pem
+            install.sh
+            install.ps1
+            compose.yaml
+            .env.example

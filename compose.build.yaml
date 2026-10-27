@@ -3,10 +3,24 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: "${DSH_IMAGE_VARIANT:-dev}"
       args:
+        NODE_IMAGE: "${NODE_IMAGE:-node:24.18.0-bookworm-slim}"
+        GO_IMAGE: "${GO_IMAGE:-golang:1.26.5-bookworm}"
+        RUST_IMAGE: "${RUST_IMAGE:-rust:1.90.0-bookworm}"
         NODE_VERSION: "${NODE_VERSION:-24.18.0}"
         GO_VERSION: "${GO_VERSION:-1.26.5}"
-        RUST_TOOLCHAIN: "${RUST_TOOLCHAIN:-stable}"
+        RUST_VERSION: "${RUST_VERSION:-1.90.0}"
         PNPM_VERSION: "${PNPM_VERSION:-11.7.0}"
         DSH_VERSION: "${DSH_VERSION:-latest}"
         INSTALL_GO_DEV_TOOLS: "${INSTALL_GO_DEV_TOOLS:-true}"
+        BUILD_MIRROR: "${BUILD_MIRROR:-global}"
+        APT_MIRROR: "${APT_MIRROR:-}"
+        NPM_REGISTRY: "${NPM_REGISTRY:-}"
+        PIP_INDEX_URL: "${PIP_INDEX_URL:-}"
+        GOPROXY: "${GOPROXY:-}"
+        RUSTUP_DIST_SERVER: "${RUSTUP_DIST_SERVER:-}"
+        CARGO_REGISTRY: "${CARGO_REGISTRY:-}"
+        VERSION: "${DSH_DOCKER_VERSION:-2.0.0}"
+        REVISION: "${DSH_DOCKER_REVISION:-unknown}"
+        CREATED: "${DSH_DOCKER_CREATED:-unknown}"

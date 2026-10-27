@@ -7,9 +7,10 @@ on:
     tags: ["v*"]
     paths:
       - Dockerfile
-      - start-dsh-web.sh
-      - dsh-web-proxy.mjs
-      - dsh-http-compat.js
+      - Cargo.toml
+      - Cargo.lock
+      - crates/**
+      - assets/**
       - .github/workflows/publish-image.yml
   schedule:
     - cron: "17 3 * * 1"
@@ -17,6 +18,8 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
+  attestations: write
 
 env:
   REGISTRY: ghcr.io
@@ -25,40 +28,84 @@ env:
 jobs:
   publish:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Static repository validation
-        shell: bash
-        run: bash scripts/self-test.sh
-
+      - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
-
       - uses: docker/setup-buildx-action@v3
-
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - id: meta
+      - id: meta-dev
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=tag
+            type=raw,value=2,enable={{is_default_branch}}
+            type=semver,pattern={{major}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{version}}
             type=sha
+      - id: meta-slim
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest-slim,enable={{is_default_branch}}
+            type=raw,value=2-slim,enable={{is_default_branch}}
+            type=semver,pattern={{major}}-slim
+            type=semver,pattern={{major}}.{{minor}}-slim
+            type=semver,pattern={{version}}-slim
+            type=sha,suffix=-slim
 
-      - uses: docker/build-push-action@v6
+      - name: Build and push dev
+        id: dev
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
+          target: dev
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta-dev.outputs.tags }}
+          labels: ${{ steps.meta-dev.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
+            CREATED=${{ github.event.repository.updated_at }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+
+      - name: Build and push slim
+        id: slim
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-slim.outputs.tags }}
+          labels: ${{ steps.meta-slim.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
+            CREATED=${{ github.event.repository.updated_at }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign images
+        env:
+          DEV_DIGEST: ${{ steps.dev.outputs.digest }}
+          SLIM_DIGEST: ${{ steps.slim.outputs.digest }}
+        run: |
+          cosign sign --yes "${REGISTRY}/${IMAGE_NAME}@${DEV_DIGEST}"
+          cosign sign --yes "${REGISTRY}/${IMAGE_NAME}@${SLIM_DIGEST}"

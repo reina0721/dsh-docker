@@ -1,0 +1,15 @@
+# Example external Caddy TLS termination.
+# The Rust gateway already provides Basic Auth; Caddy only terminates TLS and
+# forwards the original Host/Origin.
+
+dsh.example.com {
+    reverse_proxy 127.0.0.1:3080 {
+        # Preserve Host/Origin; only add the standard forwarding headers.
+        header_up Host {host}
+        header_up X-Forwarded-Host {host}
+        header_up X-Forwarded-Proto {scheme}
+
+        # Do not buffer SSE/WebSocket-style long-lived responses.
+        flush_interval -1
+    }
+}

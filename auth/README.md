@@ -1,31 +1,40 @@
 # Authentication
 
-Core Gateway 使用 Caddy HTTP Basic Authentication。
+The Rust gateway uses HTTP Basic Authentication with bcrypt hashes.
 
-认证文件：
+Canonical file:
 
 ```text
-.runtime/auth/users.caddy
+.runtime/auth/users.htpasswd
 ```
 
-创建/修改：
+The format is the same `username bcrypt-hash` format Caddy used, so a v1
+`users.caddy` file can be migrated without re-hashing passwords.
+
+Create or update a user:
 
 ```bash
-./scripts/create-user.sh
+dshctl user add alice
 ```
 
-查看：
+List users:
 
 ```bash
-./scripts/list-users.sh
+dshctl user list
 ```
 
-删除：
+Remove a user:
 
 ```bash
-./scripts/remove-user.sh
+dshctl user remove alice
 ```
 
-明文密码不落盘。
+Passwords are never passed in process arguments. The CLI hashes locally with
+Rust and writes the file atomically; the running gateway reloads it without a
+container restart.
 
-SSH/Git 等开发者凭据位于 `.runtime/home/`。
+The file contains password hashes, not plaintext. It is mounted into the
+container read-only. Backups that include `.runtime/` contain these hashes and
+must be protected like credentials.
+
+SSH/Git credentials remain under `.runtime/home/`.

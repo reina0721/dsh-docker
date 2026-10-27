@@ -1,14 +1,144 @@
-# dsh-docker
+# DSH Docker
 
-DeepSeek Harness（DSH）的 Docker 化长期开发环境。
+[简体中文](README.md) | [English](README.en.md)
+
+[![CI](https://github.com/rin721/dsh-docker/actions/workflows/ci.yml/badge.svg)](https://github.com/rin721/dsh-docker/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/rin721/dsh-docker?sort=semver)](https://github.com/rin721/dsh-docker/releases)
+[![GHCR](https://img.shields.io/badge/ghcr.io-rin721%2Fdsh--docker-blue?logo=github)](https://github.com/rin721/dsh-docker/pkgs/container/dsh-docker)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
+
+DeepSeek Harness（DSH）的 Docker 化长期开发环境。v2 使用 Rust 重写了宿主 CLI 与容器网关：
+
+- **`dshctl`**：单个静态二进制，负责初始化、部署、更新、诊断、认证、备份、恢复、自更新。
+- **`dsh-entrypoint`**：容器内 Rust 入口 + 反向代理，替换 Caddy 和 Node 代理。
+- **单容器**：DSH 只监听容器回环，Rust 网关对外提供 Basic Auth、Host/Origin 校验、HTML 兼容注入、WebSocket/SSE 透传。
+- **无 shell 业务脚本**：不再需要修复可执行位，Windows/Linux/macOS 使用同一个 CLI。
+
+> v2 是破坏性大版本。旧仓库的 `./scripts/*.sh` 不再提供；请阅读 [v1 → v2 迁移](docs/migration-v1-to-v2.md)。
+
+## 架构
+
+```text
+Browser
+  │  HTTPS（可选，由外部 Nginx/Caddy/Traefik 终止）
+  ▼
+127.0.0.1:3080 ── dsh 容器 ──────────────────────────────
+                   dsh-entrypoint (Rust, via tini)
+                     ├─ Rust Gateway :3080
+                     │    ├─ Basic Auth（users.htpasswd，bcrypt 缓存/热加载）
+                     │    ├─ Host/Origin 校验与内部化
+                     │    ├─ HTML compat 注入 / WebSocket / SSE
+                     │    └─ 502/503、结构化日志、健康检查
+                     └─ dsh web --host 127.0.0.1 --port 3079
+                          └─ /workspace, /home/node/.dsh, /home/node/.persist
+```
+
+## 快速开始
+
+### 一条命令（推荐）
+
+Linux / macOS：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rin721/dsh-docker/main/install.sh | bash
+```
+
+中国大陆网络可加 `--mirror cn`（脚本与镜像都会优先使用国内加速）：
+
+```bash
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/rin721/dsh-docker/main/install.sh | bash -s -- --mirror cn
+```
+
+Windows（PowerShell 5.1+，需要 Docker Desktop / WSL2）：
+
+```powershell
+irm https://raw.githubusercontent.com/rin721/dsh-docker/main/install.ps1 | iex
+```
+
+安装脚本会下载并校验 `dshctl`，初始化 `~/dsh-docker`，然后在交互式终端中引导创建第一个登录用户并部署。非交互环境请先执行 `dshctl user add`，再执行 `dshctl deploy`。
+
+部署后直接打开 `http://127.0.0.1:3080/`，用 Basic Auth 登录即可。网关会自动捕获 DSH 的
+单次 web token（日志中脱敏），并在 DSH 设置认证 Cookie 前注入，不需要手动复制
+`?token=...` 地址。
+
+### 从源码
+
+需要 Rust 1.85+、Docker Engine 24+、Docker Compose v2：
+
+```bash
+git clone https://github.com/rin721/dsh-docker.git
+cd dsh-docker
+cargo build --release -p dshctl
+./target/release/dshctl deploy
+```
+
+国内克隆/拉取加速：
+
+```bash
+git clone https://ghfast.top/https://github.com/rin721/dsh-docker.git
+# 或
+git clone https://gh-proxy.com/https://github.com/rin721/dsh-docker.git
+```
+
+## 镜像
+
+默认：
+
+```dotenv
+DSH_IMAGE_MODE=auto
+DSH_IMAGE=ghcr.io/rin721/dsh-docker:2
+```
+
+- `:2` / `:latest`：`dev` 镜像，包含 Go、Rust、Node、pnpm、DSH 与常用开发工具。
+- `:2-slim`：`slim` 镜像，保留 Node、DSH、Git/SSH、构建基础工具，不包含 Go/Rust 工具链。
+
+`auto` 模式按 `pull → 本地兼容镜像 → 本地构建` 回退，并实时显示拉取进度。镜像必须带有
+`io.github.rin721.dsh-docker.runtime=2` 标签，避免误用 v1 缓存。
+
+### 国内镜像
+
+```bash
+dshctl deploy --mirror cn
+```
+
+或写入 `.env`：
+
+```dotenv
+DSH_IMAGE_MIRROR=cn
+DSH_IMAGE_MIRRORS=ghcr.nju.edu.cn,ghcr.m.daocloud.io
+```
+
+镜像只作为传输层；拉取后会 tag 回 canonical 名称并校验 v2 标签。第三方镜像可用性不由本项目保证。
+
+## 常用命令
+
+| 命令 | 说明 |
+| --- | --- |
+| `dshctl init` | 创建 `.env`、缺失的 `compose.yaml`、`.runtime/` 与权限 |
+| `dshctl deploy` | 预检、认证、拉取/构建镜像、启动、健康检查 |
+| `dshctl up` / `down` / `stop` / `restart` | 生命周期管理 |
+| `dshctl status [--json]` | 服务、HTTP、认证、镜像状态 |
+| `dshctl doctor [--fix] [--network] [--json]` | 诊断 Docker、端口、配置、权限、认证、镜像与网络 |
+| `dshctl logs -f` / `dshctl shell` / `dshctl exec -- cmd` | 日志/终端/容器内命令 |
+| `dshctl user add <name>` | 创建或修改密码（bcrypt，本地生成，无需重启） |
+| `dshctl user list` / `dshctl user remove <name>` | 查看/删除用户 |
+| `dshctl ssh list/generate/import/remove/test` | 管理持久化 SSH Key（不打印私钥） |
+| `dshctl git setup --name ... --email ... [--key ...]` | 配置容器内 Git 身份/默认 Key |
+| `dshctl backup [path] [--quiesce]` | 备份 `.env` + `.runtime`（0600） |
+| `dshctl restore <archive> --yes` | 校验并恢复；失败回滚 |
+| `dshctl update [--source] [--backup]` | 拉取最新镜像并重建 |
+| `dshctl rebuild` | 强制本地构建 |
+| `dshctl image check` / `dshctl image pull` | 镜像/网络诊断与拉取 |
+| `dshctl config validate` / `dshctl config show` | 配置校验/脱敏展示 |
+| `dshctl migrate --dry-run` | v1 → v2 迁移 |
+| `dshctl self-update` | 从 GitHub Releases 更新自身 |
+| `dshctl completion bash` | 生成补全脚本 |
+
+完整说明见 [CLI 文档](docs/cli.md) 与 [配置参考](docs/configuration.md)。
 
 ## 持久化
 
-默认所有长期状态都在仓库的：
-
-```text
-.runtime/
-```
+默认所有长期状态都在仓库的 `.runtime/`：
 
 ```text
 .runtime/
@@ -30,245 +160,124 @@ DeepSeek Harness（DSH）的 Docker 化长期开发环境。
 │   ├── npm/npmrc             -> ~/.npmrc
 │   ├── cargo/config.toml     -> ~/.cargo/config.toml
 │   ├── cargo/credentials.toml-> ~/.cargo/credentials.toml
-│   ├── netrc                 -> ~/.netrc
-│   └── pypirc                -> ~/.pypirc
-└── auth/users.caddy          -> Web Basic Auth
+│   └── netrc / pypirc
+└── auth/users.htpasswd       -> Web Basic Auth
 ```
 
-### DSH 自身
+不映射整个 `/home/node`，因为镜像里的 Go/Rust/npm/DSH 工具链有一部分位于 Home 下。容器启动时只把需要长期保存的路径链接到 `/home/node/.persist`。
 
-整个：
-
-```text
-/home/node/.dsh
-```
-
-映射到：
-
-```text
-.runtime/dsh-home
-```
-
-因此 DSH Home 下的配置、profiles、sessions/state、credentials 等都会跟随宿主机持久化。
-
-### Workspace
-
-```text
-.runtime/workspace
-        ↕
-/workspace
-```
-
-目录选择器默认从 `/home/node` 开始，因此启动时自动创建：
-
-```text
-/home/node/workspace -> /workspace
-```
-
-### Git / SSH
-
-SSH：
-
-```text
-~/.ssh
-  ↓
-.runtime/home/ssh
-```
-
-Git：
-
-```text
-~/.gitconfig
-  ↓
-.runtime/home/git/config
-
-~/.git-credentials
-  ↓
-.runtime/home/git/credentials
-```
-
-生成 Key：
+## 认证
 
 ```bash
-docker compose exec dsh bash
-ssh-keygen -t ed25519 -C "you@example.com"
+dshctl user add alice
+dshctl user list
+dshctl user remove alice
 ```
 
-删除或重建容器后 Key 仍然存在。
+- 默认 bcrypt cost `14`，可用 `AUTH_BCRYPT_COST` 调整；小 VPS 可考虑 `12`。
+- 新密码默认至少 12 字符，可用 `AUTH_MIN_PASSWORD_LENGTH` 调整。
+- 明文密码不写入磁盘、不出现在进程参数中；支持 `--password-stdin` / `--password-file`。
+- 网关缓存成功凭证并在文件变更后热加载；新增/删除用户无需重启容器。
+- 删除最后一个用户后网关 fail closed（503），不会在无认证状态下继续放行。
 
-> `git credential.helper store` 会明文保存 HTTPS 凭据；GitHub 认证更推荐 SSH Key。
+## SSH / Git 身份
 
-## 为什么不映射整个 `/home/node`
-
-镜像中的 Go/Rust/npm/DSH 工具链有一部分位于 Home 下。整个 Home bind mount 会把镜像里的工具隐藏掉。
-
-所以使用：
-
-```text
-.runtime/home -> /home/node/.persist
-```
-
-再把真正需要长期保存的 Home 路径链接进去。
-
-## 旧版本迁移
-
-`deploy.sh` 和 `rebuild.sh` 会在替换已有容器之前执行：
+GitHub/GitLab 的 SSH Key 持久化在 `.runtime/home/ssh`，Git 配置在
+`.runtime/home/git/config`。推荐用 CLI 管理：
 
 ```bash
-scripts/migrate-home-state.sh
+# 生成（交互式输入 passphrase）或使用 --no-passphrase
+dshctl ssh generate work --type ed25519 --comment "you@example.com"
+
+# 导入宿主机已有 Key
+dshctl ssh import ~/.ssh/id_ed25519 --name github
+
+# 查看 / 测试 / 删除（只显示公钥和 fingerprint）
+dshctl ssh list
+dshctl ssh test github --key work
+dshctl ssh remove work
+
+# 配置 Git 用户与默认 Key
+dshctl git setup --name "Your Name" --email "you@example.com" --key work
+dshctl git show
 ```
 
-如果旧容器已有 SSH Key、Git config、XDG config 等，而 `.runtime/home` 对应位置还为空，会先复制到宿主机。已有持久化数据不会被覆盖。
+把 `dshctl ssh list` 显示的公钥添加到 GitHub → Settings → SSH and GPG keys，然后
+`dshctl ssh test github`。私钥不会写入日志、镜像或 Git；`dshctl backup` 会包含
+`.runtime/home/ssh`，请按敏感文件保管。详见 [SSH/Git 文档](docs/ssh-git.md)。
 
-## 权限
+## 反向代理
 
-自动维护：
+Core 默认只监听 `127.0.0.1:3080`，TLS 由你现有的 Nginx/Caddy/1Panel/Traefik 终止。示例：
 
-```text
-.runtime/home          0700
-~/.ssh                 0700
-SSH private files      0600
-SSH public/known_hosts 0644
-GnuPG                  0700/0600
-Git/CLI secret files   0600
-```
+- [Nginx](examples/nginx.conf)
+- [Caddy](examples/Caddyfile)
+- [Traefik](examples/traefik.yaml)
+- [1Panel](examples/1panel.md)
 
-手工修复：
+关键要求：保留原始 `Host` 与 `Origin`；WebSocket 需要 Upgrade；SSE 关闭 buffering。
+
+## 安全
+
+- Basic Auth 只应在 HTTPS 后面使用；不要直接把 3080 暴露到公网明文 HTTP。
+- 备份包含 SSH 私钥、Git/云凭据与 DSH 凭据，必须按敏感文件保管。
+- 镜像从 GHCR 拉取时建议校验 digest/cosign；第三方镜像只作为传输层。
+- 详细威胁模型与建议见 [安全说明](docs/security.md)。
+
+## 更新与迁移
 
 ```bash
-bash scripts/fix-home-permissions.sh
+# 更新镜像并重建（不删除 .runtime）
+dshctl update --backup
+
+# v1 数据迁移（users.caddy -> users.htpasswd，提示 :latest -> :2）
+dshctl migrate --dry-run
+dshctl migrate
+dshctl deploy
 ```
 
-## 部署
+回滚：`git checkout <v1 tag>` 后使用旧 Compose/镜像启动；`.runtime` 不会被新版本删除。详见 [迁移指南](docs/migration-v1-to-v2.md)。
+
+## 开发
 
 ```bash
-git clone https://github.com/rin721/dsh-docker.git
-cd dsh-docker
-./scripts/deploy.sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --locked
+docker build --target runtime -t dsh-docker:slim .
+docker build --target dev -t dsh-docker:dev .
 ```
 
-如果 executable bit 被文件系统破坏：
+无 Docker 时仍可运行配置/认证/备份测试。网关集成测试在 `crates/dsh-gateway/tests/proxy.rs`。
 
-```bash
-bash scripts/deploy.sh
-```
+## 文档
 
-## Core
+- [架构](docs/architecture.md)
+- [配置](docs/configuration.md)
+- [CLI](docs/cli.md)
+- [SSH / Git](docs/ssh-git.md)
+- [安全](docs/security.md)
+- [故障排查](docs/troubleshooting.md)
+- [常见问题](docs/faq.md)
+- [开发](docs/development.md)
+- [发布流程](docs/release.md)
+- [v1 → v2 迁移](docs/migration-v1-to-v2.md)
+- [文档索引](docs/README.md)
 
-默认：
+## 直链与国内访问
 
-```dotenv
-BIND_ADDRESS=127.0.0.1
-DSH_PORT=3080
-```
+| 内容 | 直链 |
+| --- | --- |
+| 仓库 | `https://github.com/rin721/dsh-docker` |
+| 安装脚本 | `https://raw.githubusercontent.com/rin721/dsh-docker/main/install.sh` |
+| 安装脚本（加速） | `https://ghfast.top/https://raw.githubusercontent.com/rin721/dsh-docker/main/install.sh` |
+| 文档镜像 | `https://cdn.jsdelivr.net/gh/rin721/dsh-docker@main/README.md` |
+| Releases | `https://github.com/rin721/dsh-docker/releases/latest` |
+| GHCR | `ghcr.io/rin721/dsh-docker:2` |
+| GHCR 镜像示例 | `ghcr.nju.edu.cn/rin721/dsh-docker:2`、`ghcr.m.daocloud.io/rin721/dsh-docker:2` |
 
-你自己的 Nginx / 1Panel upstream：
+第三方加速地址仅用于传输，可能会变更；请以 SHA256/cosign 校验和官方 GitHub 为信任根。
 
-```text
-http://127.0.0.1:3080
-```
+## 许可证
 
-仓库不管理域名、TLS、80/443。
-
-## 动态反代
-
-不要求配置具体域名。Core 会校验外部 Host/Origin，再转换成 DSH 内部 loopback authority。
-
-## 镜像
-
-默认：
-
-```dotenv
-DSH_IMAGE_MODE=auto
-DSH_IMAGE=ghcr.io/rin721/dsh-docker:latest
-```
-
-优先 Pull；不可用时复用本地镜像；仍没有才本地 Build。
-
-`auto` 模式下 `docker pull` 的下载进度会**实时显示**（而不是被缓存、看起来像卡死）。
-若拉取长时间无进展，见下方「镜像拉取与网络排查」。
-
-## 状态与诊断
-
-```bash
-./scripts/check.sh
-./scripts/doctor.sh
-./scripts/check-image.sh
-```
-
-会检查 Workspace、Developer Home、SSH/Git 持久化以及权限；`check-image.sh` 额外检查
-预构建镜像与 GHCR 网络连通性。
-
-### 镜像拉取与网络排查
-
-若 `deploy.sh` 在「尝试拉取预构建 DSH 镜像」后长时间无输出，按顺序排查：
-
-1. 确认是否只是进度缓慢：`docker pull ghcr.io/rin721/dsh-docker:latest` 看是否出现
-   `Pulling fs layer` / `Downloading ...`。能显示进度=正常，只是镜像较大或带宽慢。
-2. 一键诊断：`./scripts/check-image.sh`（检测 manifest、GHCR Registry、Layer CDN DNS）。
-3. Registry 与 Layer CDN 分开测试：
-
-   ```bash
-   time docker manifest inspect ghcr.io/rin721/dsh-docker:latest >/dev/null
-   getent hosts ghcr.io
-   getent hosts pkg-containers.githubusercontent.com
-   curl -I --connect-timeout 10 https://ghcr.io/v2/
-   ```
-
-   - `curl -I https://ghcr.io/v2/` 返回 `HTTP/2 401` 是**正常**（说明 DNS/TCP/TLS 通）。
-   - 若 manifest 秒回、而 `docker pull` 卡在 `Downloading/Waiting`，问题多在 Layer CDN
-     `pkg-containers.githubusercontent.com` 或服务器出口网络。
-
-
-## 备份
-
-```bash
-./scripts/backup.sh
-```
-
-备份：
-
-```text
-.env
-.runtime/
-```
-
-备份文件权限为 `0600`。
-
-**其中包含 SSH 私钥、Git/Cloud/CLI 凭据和 DSH 凭据，必须作为敏感文件保存。**
-
-## 更新
-
-```bash
-./scripts/update.sh
-```
-
-不会删除：
-
-```text
-.env
-.runtime/workspace
-.runtime/dsh-home
-.runtime/home
-.runtime/auth
-```
-
-## 常用命令
-
-```bash
-./scripts/deploy.sh
-./scripts/update.sh
-./scripts/rebuild.sh
-./scripts/check.sh
-./scripts/doctor.sh
-
-./scripts/create-user.sh
-./scripts/list-users.sh
-./scripts/remove-user.sh
-
-bash scripts/fix-home-permissions.sh
-bash scripts/migrate-home-state.sh
-bash scripts/backup.sh
-
-docker compose exec dsh bash
-```
+MIT OR Apache-2.0，见 [LICENSE-MIT](LICENSE-MIT) 与 [LICENSE-APACHE](LICENSE-APACHE)。
