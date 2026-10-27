@@ -173,6 +173,7 @@ USER root
 
 COPY --from=gateway-build --chmod=0755 /out/dsh-entrypoint /usr/local/bin/dsh-entrypoint
 COPY LICENSE-MIT LICENSE-APACHE /usr/share/licenses/dsh-docker/
+RUN chown -R node:node /home/node
 
 LABEL org.opencontainers.image.title="DSH Docker" \
       org.opencontainers.image.description="DeepSeek Harness development environment with a Rust gateway" \
@@ -289,6 +290,9 @@ LABEL org.opencontainers.image.title="DSH Docker (dev)" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.created="${CREATED}"
+
+USER root
+RUN chown -R node:node /home/node
 
 USER node
 WORKDIR /workspace

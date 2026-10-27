@@ -101,14 +101,26 @@ mod imp {
                 if current == target {
                     return Ok(());
                 }
-                fs::remove_file(link)
-                    .with_context(|| format!("failed to replace link {}", link.display()))?;
+                if let Err(error) = fs::remove_file(link) {
+                    warn!(
+                        path = %link.display(),
+                        error = %error,
+                        "could not replace existing link; keeping the in-image path"
+                    );
+                    return Ok(());
+                }
             } else if metadata.is_dir() {
                 // Merge first; only remove the source after a successful copy so
                 // a failed migration cannot destroy developer data.
                 copy_missing_dir(link, target)?;
-                fs::remove_dir_all(link)
-                    .with_context(|| format!("failed to remove {}", link.display()))?;
+                if let Err(error) = fs::remove_dir_all(link) {
+                    warn!(
+                        path = %link.display(),
+                        error = %error,
+                        "could not remove the in-image directory; keeping it instead of linking"
+                    );
+                    return Ok(());
+                }
             } else {
                 warn!(path = %link.display(), "path exists and is not a directory; not replacing");
                 return Ok(());
@@ -145,8 +157,14 @@ mod imp {
                 if current == target {
                     return Ok(());
                 }
-                fs::remove_file(link)
-                    .with_context(|| format!("failed to replace link {}", link.display()))?;
+                if let Err(error) = fs::remove_file(link) {
+                    warn!(
+                        path = %link.display(),
+                        error = %error,
+                        "could not replace existing link; keeping the in-image path"
+                    );
+                    return Ok(());
+                }
             } else if metadata.is_file() {
                 if is_empty(target)? && metadata.len() > 0 {
                     fs::copy(link, target).with_context(|| {
@@ -157,8 +175,14 @@ mod imp {
                         )
                     })?;
                 }
-                fs::remove_file(link)
-                    .with_context(|| format!("failed to remove {}", link.display()))?;
+                if let Err(error) = fs::remove_file(link) {
+                    warn!(
+                        path = %link.display(),
+                        error = %error,
+                        "could not remove the in-image file; keeping it instead of linking"
+                    );
+                    return Ok(());
+                }
             } else {
                 warn!(path = %link.display(), "path exists and is not a file; not replacing");
                 return Ok(());
