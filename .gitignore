@@ -41,7 +41,7 @@ node_modules/
 build/
 coverage/
 .pnpm-store/
-bin/
+/bin/
 __pycache__/
 .venv/
 venv/
