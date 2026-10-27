@@ -18,7 +18,7 @@ jobs:
     name: Verify version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Tag must match Cargo version
         shell: bash
         run: |
@@ -51,7 +51,7 @@ jobs:
             archive: zip
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.90.0
         with:
           targets: ${{ matrix.target }}
@@ -98,7 +98,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           path: dist
