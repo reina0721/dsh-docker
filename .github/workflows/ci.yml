@@ -79,7 +79,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Compose config
         run: docker compose -f compose.yaml -f compose.build.yaml config >/dev/null
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - name: Build slim image
         uses: docker/build-push-action@v6
         with:
