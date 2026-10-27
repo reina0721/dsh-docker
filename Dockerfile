@@ -13,6 +13,7 @@ ARG BUILDPLATFORM
 FROM --platform=${BUILDPLATFORM:-linux/amd64} ${RUST_IMAGE} AS gateway-build
 
 ARG TARGETARCH
+ARG BUILDARCH
 ARG CARGO_REGISTRY=
 
 WORKDIR /build
@@ -35,12 +36,14 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
         amd64) \
             triple="x86_64-unknown-linux-gnu" ;; \
         arm64) \
-            apt-get update; \
-            apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross; \
             triple="aarch64-unknown-linux-gnu"; \
-            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc; \
-            export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc; \
-            export AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar ;; \
+            if [ "${BUILDARCH:-amd64}" != "arm64" ]; then \
+                apt-get update; \
+                apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross; \
+                export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc; \
+                export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc; \
+                export AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar; \
+            fi ;; \
         *) echo "unsupported TARGETARCH=${TARGETARCH:-amd64}" >&2; exit 1 ;; \
     esac; \
     rustup target add "${triple}" || true; \

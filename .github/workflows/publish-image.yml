@@ -15,6 +15,11 @@ on:
   schedule:
     - cron: "17 3 * * 1"
 
+# A force-pushed tag or a second push must not start another expensive build.
+concurrency:
+  group: publish-image-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   packages: write
@@ -26,22 +31,52 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
+  build:
+    name: Build ${{ matrix.variant }} / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            arch: amd64
+            variant: dev
+            target: dev
+            suffix: ""
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
+            variant: dev
+            target: dev
+            suffix: ""
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            arch: amd64
+            variant: slim
+            target: runtime
+            suffix: "-slim"
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
+            variant: slim
+            target: runtime
+            suffix: "-slim"
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - id: meta-dev
+      - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            suffix=${{ matrix.suffix }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=2,enable={{is_default_branch}}
@@ -49,63 +84,93 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{version}}
             type=sha
-      - id: meta-slim
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: ${{ matrix.target }}
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
+            CREATED=${{ github.event.repository.updated_at }}
+          cache-from: type=gha,scope=${{ matrix.variant }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}-${{ matrix.arch }}
+          provenance: mode=max
+          sbom: true
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          echo "${{ steps.build.outputs.digest }}" > "/tmp/digests/digest-${{ matrix.variant }}-${{ matrix.arch }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.variant }}-${{ matrix.arch }}
+          path: /tmp/digests/digest-${{ matrix.variant }}-${{ matrix.arch }}
+          retention-days: 1
+
+  merge:
+    name: Merge ${{ matrix.variant }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: dev
+            suffix: ""
+          - variant: slim
+            suffix: "-slim"
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            suffix=${{ matrix.suffix }}
           tags: |
-            type=raw,value=latest-slim,enable={{is_default_branch}}
-            type=raw,value=2-slim,enable={{is_default_branch}}
-            type=semver,pattern={{major}}-slim
-            type=semver,pattern={{major}}.{{minor}}-slim
-            type=semver,pattern={{version}}-slim
-            type=sha,suffix=-slim
-
-      - name: Build and push dev
-        id: dev
-        uses: docker/build-push-action@v6
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=2,enable={{is_default_branch}}
+            type=semver,pattern={{major}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{version}}
+            type=sha
+      - uses: actions/download-artifact@v4
         with:
-          context: .
-          file: ./Dockerfile
-          target: dev
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-dev.outputs.tags }}
-          labels: ${{ steps.meta-dev.outputs.labels }}
-          build-args: |
-            VERSION=${{ github.ref_name }}
-            REVISION=${{ github.sha }}
-            CREATED=${{ github.event.repository.updated_at }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          provenance: mode=max
-          sbom: true
-
-      - name: Build and push slim
-        id: slim
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          target: runtime
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-slim.outputs.tags }}
-          labels: ${{ steps.meta-slim.outputs.labels }}
-          build-args: |
-            VERSION=${{ github.ref_name }}
-            REVISION=${{ github.sha }}
-            CREATED=${{ github.event.repository.updated_at }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          provenance: mode=max
-          sbom: true
-
-      - uses: sigstore/cosign-installer@v3
-      - name: Sign images
+          pattern: digest-${{ matrix.variant }}-*
+          path: digests
+      - name: Create multi-arch manifest
         env:
-          DEV_DIGEST: ${{ steps.dev.outputs.digest }}
-          SLIM_DIGEST: ${{ steps.slim.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          cosign sign --yes "${REGISTRY}/${IMAGE_NAME}@${DEV_DIGEST}"
-          cosign sign --yes "${REGISTRY}/${IMAGE_NAME}@${SLIM_DIGEST}"
+          set -euo pipefail
+          shopt -s nullglob
+          refs=()
+          for file in digests/digest-*; do
+            digest=$(cat "$file")
+            refs+=("${REGISTRY}/${IMAGE_NAME}@${digest}")
+          done
+          test "${#refs[@]}" -eq 2
+          tags=()
+          while IFS= read -r tag; do
+            if [ -n "$tag" ]; then tags+=(--tag "$tag"); fi
+          done <<< "${TAGS}"
+          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign multi-arch image
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          first=$(printf '%s\n' "${TAGS}" | head -n 1)
+          test -n "$first"
+          cosign sign --yes "$first"
