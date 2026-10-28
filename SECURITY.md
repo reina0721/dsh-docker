@@ -10,7 +10,7 @@
 ## Reporting a vulnerability
 
 Do not open a public issue. Use GitHub's private security advisory flow for
-`rin721/dsh-docker`, or contact the maintainer through the repository profile.
+`reina0721/dsh-docker`, or contact the maintainer through the repository profile.
 
 Please include:
 

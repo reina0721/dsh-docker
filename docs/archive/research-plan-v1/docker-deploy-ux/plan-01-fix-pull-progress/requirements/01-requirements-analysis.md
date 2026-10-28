@@ -5,7 +5,7 @@
 用户反馈：运行 `./scripts/deploy.sh` 后，部署流程停在：
 
 ```text
-尝试拉取预构建 DSH 镜像：ghcr.io/rin721/dsh-docker:latest
+尝试拉取预构建 DSH 镜像：ghcr.io/reina0721/dsh-docker:latest
 ```
 
 然后长时间无任何输出，容易被误判为「程序死锁」。
@@ -50,7 +50,7 @@ auto)
   安装 build-essential/make/cmake/clang/python3/Rust/Node 等大量工具，**镜像本身较重**。
 - `.github/workflows/publish-image.yml`：`platforms: linux/amd64,linux/arm64`，multi-arch。
   - 注意：amd64/arm64 主机只会拉取对应架构，**不会**因为 multi-arch 而下载量翻倍。
-- `compose.yaml`：`image: "${DSH_IMAGE:-ghcr.io/rin721/dsh-docker:latest}"`，默认镜像即
+- `compose.yaml`：`image: "${DSH_IMAGE:-ghcr.io/reina0721/dsh-docker:latest}"`，默认镜像即
   GHCR 预构建镜像。
 
 ## 3. 目标

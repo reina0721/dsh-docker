@@ -36,14 +36,14 @@ Images and release checksums are signed with cosign keyless (GitHub OIDC). Examp
 verification:
 
 ```bash
-cosign verify ghcr.io/rin721/dsh-docker:2 \
-  --certificate-identity-regexp '^https://github.com/rin721/dsh-docker/.github/workflows/publish-image.yml@refs/(heads/main|tags/v.*)$' \
+cosign verify ghcr.io/reina0721/dsh-docker:2 \
+  --certificate-identity-regexp '^https://github.com/(reina0721|rin721)/dsh-docker/.github/workflows/publish-image.yml@refs/(heads/main|tags/v.*)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 cosign verify-blob SHA256SUMS \
   --certificate SHA256SUMS.pem \
   --signature SHA256SUMS.sig \
-  --certificate-identity-regexp '^https://github.com/rin721/dsh-docker/.github/workflows/release.yml@refs/tags/v.*$' \
+  --certificate-identity-regexp '^https://github.com/(reina0721|rin721)/dsh-docker/.github/workflows/release.yml@refs/tags/v.*$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 

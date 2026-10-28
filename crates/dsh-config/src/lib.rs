@@ -18,7 +18,7 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 /// Default prebuilt image for the v2 runtime.
-pub const DEFAULT_IMAGE: &str = "ghcr.io/rin721/dsh-docker:2";
+pub const DEFAULT_IMAGE: &str = "ghcr.io/reina0721/dsh-docker:2";
 /// Default realm used in the Basic Auth challenge.
 pub const DEFAULT_REALM: &str = "DeepSeek Harness";
 /// Default bcrypt cost used for newly created passwords.

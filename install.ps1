@@ -1,7 +1,7 @@
 # DSH Docker installer for Windows.
 #
 # Usage (PowerShell 5.1+):
-#   irm https://raw.githubusercontent.com/rin721/dsh-docker/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.ps1 | iex
 #
 # Or:
 #   .\install.ps1 [-Dir C:\path] [-Version v2.0.0] [-Mirror global|cn|off] [-NoDeploy]
@@ -24,7 +24,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$Repo = 'rin721/dsh-docker'
+$Repo = 'reina0721/dsh-docker'
 $FallbackVersion = 'v2.0.0'
 $MirrorPrefixes = @('https://ghfast.top/', 'https://gh-proxy.com/')
 

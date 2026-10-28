@@ -40,7 +40,7 @@ Docker (backup `--quiesce` needs it). Deploy/status/logs need Docker.
 ## How large is the image?
 
 The `dev` image intentionally includes Go, Rust, Node, pnpm, DSH, and development
-tools. Use `DSH_IMAGE=ghcr.io/rin721/dsh-docker:2-slim` for a smaller runtime without
+tools. Use `DSH_IMAGE=ghcr.io/reina0721/dsh-docker:2-slim` for a smaller runtime without
 Go/Rust toolchains. Exact sizes are recorded in release notes.
 
 ## Can I use a China mirror?

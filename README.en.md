@@ -2,9 +2,9 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-[![CI](https://github.com/rin721/dsh-docker/actions/workflows/ci.yml/badge.svg)](https://github.com/rin721/dsh-docker/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/rin721/dsh-docker?sort=semver)](https://github.com/rin721/dsh-docker/releases)
-[![GHCR](https://img.shields.io/badge/ghcr.io-rin721%2Fdsh--docker-blue?logo=github)](https://github.com/rin721/dsh-docker/pkgs/container/dsh-docker)
+[![CI](https://github.com/reina0721/dsh-docker/actions/workflows/ci.yml/badge.svg)](https://github.com/reina0721/dsh-docker/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/reina0721/dsh-docker?sort=semver)](https://github.com/reina0721/dsh-docker/releases)
+[![GHCR](https://img.shields.io/badge/ghcr.io-reina0721%2Fdsh--docker-blue?logo=github)](https://github.com/reina0721/dsh-docker/pkgs/container/dsh-docker)
 
 A long-lived Docker development environment for DeepSeek Harness (DSH). Version 2
 replaces the host shell scripts, Caddy gateway, and Node proxy with Rust:
@@ -24,20 +24,20 @@ replaces the host shell scripts, Caddy gateway, and Node proxy with Rust:
 Linux / macOS:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rin721/dsh-docker/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash
 ```
 
 With the China mirror policy:
 
 ```bash
-curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/rin721/dsh-docker/main/install.sh \
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh \
   | bash -s -- --mirror cn
 ```
 
 Windows PowerShell 5.1+ (Docker Desktop / WSL2 required):
 
 ```powershell
-irm https://raw.githubusercontent.com/rin721/dsh-docker/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.ps1 | iex
 ```
 
 The installer verifies the binary checksum, initializes `~/dsh-docker`, and, on an
@@ -51,7 +51,7 @@ you do not need to copy the `?token=...` URL manually.
 From source (Rust 1.85+, Docker Engine 24+, Compose v2):
 
 ```bash
-git clone https://github.com/rin721/dsh-docker.git
+git clone https://github.com/reina0721/dsh-docker.git
 cd dsh-docker
 cargo build --release -p dshctl
 ./target/release/dshctl deploy
@@ -74,7 +74,7 @@ Browser -> TLS reverse proxy (optional) -> 127.0.0.1:3080
 
 ```dotenv
 DSH_IMAGE_MODE=auto
-DSH_IMAGE=ghcr.io/rin721/dsh-docker:2
+DSH_IMAGE=ghcr.io/reina0721/dsh-docker:2
 ```
 
 - `:2` / `:latest`: `dev` image with Go, Rust, Node, pnpm, DSH, and common tools.
@@ -83,7 +83,7 @@ DSH_IMAGE=ghcr.io/rin721/dsh-docker:2
 
 `auto` tries pull, then a compatible local image, then a local build. Pull output is
 never captured, so progress stays live. Images must carry
-`io.github.rin721.dsh-docker.runtime=2`; v1 caches are rejected.
+`io.github.reina0721.dsh-docker.runtime=2`; v1 caches are rejected.
 
 China mirror:
 

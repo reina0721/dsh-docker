@@ -76,8 +76,8 @@ fi
    - `curl` 长时间无响应 → 网络不通。
 3. **Registry 与 Layer CDN 分离测试**：
    ```bash
-   time docker manifest inspect ghcr.io/rin721/dsh-docker:latest >/dev/null
-   docker pull ghcr.io/rin721/dsh-docker:latest
+   time docker manifest inspect ghcr.io/reina0721/dsh-docker:latest >/dev/null
+   docker pull ghcr.io/reina0721/dsh-docker:latest
    ```
    - manifest 快速完成、`Downloading/Waiting` 卡住 → 指向 Layer CDN
      `pkg-containers.githubusercontent.com` 或出口带宽。

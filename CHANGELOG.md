@@ -11,8 +11,8 @@ the project uses Semantic Versioning.
   the `dsh` container. The `gateway` Compose service and `Caddyfile.gateway` are gone.
 - Replaced all host shell scripts with the `dshctl` binary. `./scripts/*.sh` no longer
   exists; see `docs/migration-v1-to-v2.md` for the command mapping.
-- The default image is now `ghcr.io/rin721/dsh-docker:2` and must carry the
-  `io.github.rin721.dsh-docker.runtime=2` label. v1 caches are rejected.
+- The default image is now `ghcr.io/reina0721/dsh-docker:2` and must carry the
+  `io.github.reina0721.dsh-docker.runtime=2` label. v1 caches are rejected.
 - The canonical auth file is `.runtime/auth/users.htpasswd`; `users.caddy` remains a
   read fallback and is migrated by `init`/`migrate`.
 - New passwords default to a minimum of 12 characters.

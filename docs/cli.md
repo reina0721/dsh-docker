@@ -40,7 +40,7 @@ runtime paths. JSON schema:
   "cli_version": "2.0.0",
   "project_dir": "...",
   "runtime_dir": "...",
-  "image": "ghcr.io/rin721/dsh-docker:2",
+  "image": "ghcr.io/reina0721/dsh-docker:2",
   "variant": "dev",
   "image_label": "2",
   "services": [],

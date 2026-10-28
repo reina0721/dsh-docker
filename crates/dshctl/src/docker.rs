@@ -10,7 +10,8 @@ use anyhow::{Context, Result, bail};
 use dsh_config::{Config, ImageMode, MirrorMode};
 use serde_json::Value;
 
-pub const RUNTIME_LABEL: &str = "io.github.rin721.dsh-docker.runtime";
+pub const RUNTIME_LABEL: &str = "io.github.reina0721.dsh-docker.runtime";
+pub const LEGACY_RUNTIME_LABEL: &str = "io.github.rin721.dsh-docker.runtime";
 pub const RUNTIME_LABEL_VALUE: &str = "2";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -244,6 +245,9 @@ impl Docker {
     pub fn image_compatible(&self, image: &str) -> bool {
         matches!(
             self.image_label(image, RUNTIME_LABEL),
+            Ok(Some(value)) if value == RUNTIME_LABEL_VALUE
+        ) || matches!(
+            self.image_label(image, LEGACY_RUNTIME_LABEL),
             Ok(Some(value)) if value == RUNTIME_LABEL_VALUE
         )
     }
@@ -515,8 +519,8 @@ mod tests {
     #[test]
     fn rewrites_ghcr_images() {
         assert_eq!(
-            rewrite_ghcr("ghcr.io/rin721/dsh-docker:2", "ghcr.nju.edu.cn").as_deref(),
-            Some("ghcr.nju.edu.cn/rin721/dsh-docker:2")
+            rewrite_ghcr("ghcr.io/reina0721/dsh-docker:2", "ghcr.nju.edu.cn").as_deref(),
+            Some("ghcr.nju.edu.cn/reina0721/dsh-docker:2")
         );
         assert!(rewrite_ghcr("docker.io/library/node:24", "ghcr.nju.edu.cn").is_none());
     }

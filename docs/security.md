@@ -67,7 +67,7 @@ Docker works if UID mapping is configured.
 ## Supply chain
 
 - GHCR images are built by GitHub Actions from tagged source.
-- Images carry `io.github.rin721.dsh-docker.runtime=2`; the CLI refuses v1 caches.
+- Images carry `io.github.reina0721.dsh-docker.runtime=2`; the CLI refuses v1 caches.
 - Releases publish SHA256 checksums and cosign signatures.
 - Third-party GitHub/GHCR mirrors are transport acceleration only. Verify checksums
   and, when available, cosign signatures. Do not trust an unverified binary.
@@ -76,5 +76,5 @@ Docker works if UID mapping is configured.
 ## Reporting
 
 Do not open a public issue for a vulnerability. Use GitHub's private security
-advisory flow for `rin721/dsh-docker`, or contact the maintainer through the
+advisory flow for `reina0721/dsh-docker`, or contact the maintainer through the
 repository profile. Include the version, reproduction steps, and impact.

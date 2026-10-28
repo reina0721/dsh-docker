@@ -20,7 +20,7 @@ use clap::{Args, Parser, Subcommand};
     long_about = "A single static CLI for the DSH Docker runtime. It initializes the project, \
                   manages persistent state, pulls or builds images, manages Basic Auth users, \
                   diagnoses the deployment, and creates backups.\n\n\
-                  Documentation: https://github.com/rin721/dsh-docker"
+                  Documentation: https://github.com/reina0721/dsh-docker"
 )]
 pub struct Cli {
     /// Project directory (defaults to the current directory).

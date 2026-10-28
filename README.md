@@ -2,9 +2,9 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-[![CI](https://github.com/rin721/dsh-docker/actions/workflows/ci.yml/badge.svg)](https://github.com/rin721/dsh-docker/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/rin721/dsh-docker?sort=semver)](https://github.com/rin721/dsh-docker/releases)
-[![GHCR](https://img.shields.io/badge/ghcr.io-rin721%2Fdsh--docker-blue?logo=github)](https://github.com/rin721/dsh-docker/pkgs/container/dsh-docker)
+[![CI](https://github.com/reina0721/dsh-docker/actions/workflows/ci.yml/badge.svg)](https://github.com/reina0721/dsh-docker/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/reina0721/dsh-docker?sort=semver)](https://github.com/reina0721/dsh-docker/releases)
+[![GHCR](https://img.shields.io/badge/ghcr.io-reina0721%2Fdsh--docker-blue?logo=github)](https://github.com/reina0721/dsh-docker/pkgs/container/dsh-docker)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 
 DeepSeek Harness（DSH）的 Docker 化长期开发环境。v2 使用 Rust 重写了宿主 CLI 与容器网关：
@@ -40,19 +40,19 @@ Browser
 Linux / macOS：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rin721/dsh-docker/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash
 ```
 
 中国大陆网络可加 `--mirror cn`（脚本与镜像都会优先使用国内加速）：
 
 ```bash
-curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/rin721/dsh-docker/main/install.sh | bash -s -- --mirror cn
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash -s -- --mirror cn
 ```
 
 Windows（PowerShell 5.1+，需要 Docker Desktop / WSL2）：
 
 ```powershell
-irm https://raw.githubusercontent.com/rin721/dsh-docker/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.ps1 | iex
 ```
 
 安装脚本会下载并校验 `dshctl`，初始化 `~/dsh-docker`，然后在交互式终端中引导创建第一个登录用户并部署。非交互环境请先执行 `dshctl user add`，再执行 `dshctl deploy`。
@@ -66,7 +66,7 @@ irm https://raw.githubusercontent.com/rin721/dsh-docker/main/install.ps1 | iex
 需要 Rust 1.85+、Docker Engine 24+、Docker Compose v2：
 
 ```bash
-git clone https://github.com/rin721/dsh-docker.git
+git clone https://github.com/reina0721/dsh-docker.git
 cd dsh-docker
 cargo build --release -p dshctl
 ./target/release/dshctl deploy
@@ -75,9 +75,9 @@ cargo build --release -p dshctl
 国内克隆/拉取加速：
 
 ```bash
-git clone https://ghfast.top/https://github.com/rin721/dsh-docker.git
+git clone https://ghfast.top/https://github.com/reina0721/dsh-docker.git
 # 或
-git clone https://gh-proxy.com/https://github.com/rin721/dsh-docker.git
+git clone https://gh-proxy.com/https://github.com/reina0721/dsh-docker.git
 ```
 
 ## 镜像
@@ -86,14 +86,14 @@ git clone https://gh-proxy.com/https://github.com/rin721/dsh-docker.git
 
 ```dotenv
 DSH_IMAGE_MODE=auto
-DSH_IMAGE=ghcr.io/rin721/dsh-docker:2
+DSH_IMAGE=ghcr.io/reina0721/dsh-docker:2
 ```
 
 - `:2` / `:latest`：`dev` 镜像，包含 Go、Rust、Node、pnpm、DSH 与常用开发工具。
 - `:2-slim`：`slim` 镜像，保留 Node、DSH、Git/SSH、构建基础工具，不包含 Go/Rust 工具链。
 
 `auto` 模式按 `pull → 本地兼容镜像 → 本地构建` 回退，并实时显示拉取进度。镜像必须带有
-`io.github.rin721.dsh-docker.runtime=2` 标签，避免误用 v1 缓存。
+`io.github.reina0721.dsh-docker.runtime=2` 标签，避免误用 v1 缓存。
 
 ### 国内镜像
 
@@ -268,13 +268,13 @@ docker build --target dev -t dsh-docker:dev .
 
 | 内容 | 直链 |
 | --- | --- |
-| 仓库 | `https://github.com/rin721/dsh-docker` |
-| 安装脚本 | `https://raw.githubusercontent.com/rin721/dsh-docker/main/install.sh` |
-| 安装脚本（加速） | `https://ghfast.top/https://raw.githubusercontent.com/rin721/dsh-docker/main/install.sh` |
-| 文档镜像 | `https://cdn.jsdelivr.net/gh/rin721/dsh-docker@main/README.md` |
-| Releases | `https://github.com/rin721/dsh-docker/releases/latest` |
-| GHCR | `ghcr.io/rin721/dsh-docker:2` |
-| GHCR 镜像示例 | `ghcr.nju.edu.cn/rin721/dsh-docker:2`、`ghcr.m.daocloud.io/rin721/dsh-docker:2` |
+| 仓库 | `https://github.com/reina0721/dsh-docker` |
+| 安装脚本 | `https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh` |
+| 安装脚本（加速） | `https://ghfast.top/https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh` |
+| 文档镜像 | `https://cdn.jsdelivr.net/gh/reina0721/dsh-docker@main/README.md` |
+| Releases | `https://github.com/reina0721/dsh-docker/releases/latest` |
+| GHCR | `ghcr.io/reina0721/dsh-docker:2` |
+| GHCR 镜像示例 | `ghcr.nju.edu.cn/reina0721/dsh-docker:2`、`ghcr.m.daocloud.io/reina0721/dsh-docker:2` |
 
 第三方加速地址仅用于传输，可能会变更；请以 SHA256/cosign 校验和官方 GitHub 为信任根。
 

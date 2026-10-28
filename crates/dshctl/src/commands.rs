@@ -29,8 +29,8 @@ use crate::{
     ssh::SshManager,
 };
 
-const RELEASE_API: &str = "https://api.github.com/repos/rin721/dsh-docker/releases/latest";
-const RELEASE_DOWNLOAD: &str = "https://github.com/rin721/dsh-docker/releases/download";
+const RELEASE_API: &str = "https://api.github.com/repos/reina0721/dsh-docker/releases/latest";
+const RELEASE_DOWNLOAD: &str = "https://github.com/reina0721/dsh-docker/releases/download";
 
 pub fn run(cli: Cli) -> Result<()> {
     let dir = resolve_dir(&cli.dir)?;
@@ -396,7 +396,7 @@ fn cmd_doctor(config: &Config, verbose: bool, args: DoctorArgs) -> Result<()> {
             Level::Warn,
             "env.image",
             "DSH_IMAGE uses the v1-style :latest tag",
-            Some("run `dshctl migrate` or set DSH_IMAGE=ghcr.io/rin721/dsh-docker:2")
+            Some("run `dshctl migrate` or set DSH_IMAGE=ghcr.io/reina0721/dsh-docker:2")
         );
     }
 
@@ -1175,11 +1175,27 @@ fn update_env_image(config: &Config) -> Result<bool> {
     let updated = text
         .replace(
             "DSH_IMAGE=ghcr.io/rin721/dsh-docker:latest",
-            "DSH_IMAGE=ghcr.io/rin721/dsh-docker:2",
+            "DSH_IMAGE=ghcr.io/reina0721/dsh-docker:2",
         )
         .replace(
             "DSH_IMAGE=\"ghcr.io/rin721/dsh-docker:latest\"",
+            "DSH_IMAGE=\"ghcr.io/reina0721/dsh-docker:2\"",
+        )
+        .replace(
+            "DSH_IMAGE=ghcr.io/rin721/dsh-docker:2",
+            "DSH_IMAGE=ghcr.io/reina0721/dsh-docker:2",
+        )
+        .replace(
             "DSH_IMAGE=\"ghcr.io/rin721/dsh-docker:2\"",
+            "DSH_IMAGE=\"ghcr.io/reina0721/dsh-docker:2\"",
+        )
+        .replace(
+            "DSH_IMAGE=ghcr.io/reina0721/dsh-docker:latest",
+            "DSH_IMAGE=ghcr.io/reina0721/dsh-docker:2",
+        )
+        .replace(
+            "DSH_IMAGE=\"ghcr.io/reina0721/dsh-docker:latest\"",
+            "DSH_IMAGE=\"ghcr.io/reina0721/dsh-docker:2\"",
         );
     if updated == text {
         return Ok(false);

@@ -18,7 +18,7 @@ bash scripts/self-test.sh
 ## 2. 功能验收（按验收标准 6.1–6.4）
 
 ### 2.1 进度实时显示
-- 环境：`DSH_IMAGE_MODE=auto`，本地无 `ghcr.io/rin721/dsh-docker:latest`。
+- 环境：`DSH_IMAGE_MODE=auto`，本地无 `ghcr.io/reina0721/dsh-docker:latest`。
 - 操作：`./scripts/deploy.sh`（或仅触发 `prepare_dsh_image`）。
 - 预期：出现「尝试拉取预构建 DSH 镜像」后，**立即**看到 `Pulling from ...`、
   `Pulling fs layer`、`Downloading ...` 等持续更新的进度输出；不再静止无输出。

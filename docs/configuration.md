@@ -23,14 +23,14 @@ override `.env`; defaults fill the rest. Values are never sourced as shell code.
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `DSH_IMAGE_MODE` | `auto` | `auto`, `pull`, `build` |
-| `DSH_IMAGE` | `ghcr.io/rin721/dsh-docker:2` | Canonical image |
+| `DSH_IMAGE` | `ghcr.io/reina0721/dsh-docker:2` | Canonical image |
 | `DSH_IMAGE_VARIANT` | `dev` | `dev` or `slim`; also the Docker build target |
 | `DSH_IMAGE_MIRROR` | `global` | `global`, `cn`, `off` |
 | `DSH_IMAGE_MIRRORS` | empty | Comma-separated GHCR mirror hosts |
 
 `auto` order: pull → compatible local image → local build. Pull/build inherit stdio,
 so progress is visible. A local image is only reused when its
-`io.github.rin721.dsh-docker.runtime` label is `2`.
+`io.github.reina0721.dsh-docker.runtime` label is `2`.
 
 `cn` tries mirrors before GHCR. If `DSH_IMAGE_MIRRORS` is empty, the built-in
 examples `ghcr.nju.edu.cn,ghcr.m.daocloud.io` are used. After a mirror pull the image

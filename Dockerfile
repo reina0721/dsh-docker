@@ -177,15 +177,16 @@ RUN chown -R node:node /home/node
 
 LABEL org.opencontainers.image.title="DSH Docker" \
       org.opencontainers.image.description="DeepSeek Harness development environment with a Rust gateway" \
-      org.opencontainers.image.source="https://github.com/rin721/dsh-docker" \
-      org.opencontainers.image.documentation="https://github.com/rin721/dsh-docker#readme" \
+      org.opencontainers.image.source="https://github.com/reina0721/dsh-docker" \
+      org.opencontainers.image.documentation="https://github.com/reina0721/dsh-docker#readme" \
       org.opencontainers.image.licenses="MIT OR Apache-2.0" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.created="${CREATED}" \
-      io.github.rin721.dsh-docker.runtime="2" \
-      io.github.rin721.dsh-docker.cli-compat="2" \
-      io.github.rin721.dsh-docker.variant="slim"
+      io.github.reina0721.dsh-docker.runtime="2" \
+      io.github.reina0721.dsh-docker.cli-compat="2" \
+      io.github.reina0721.dsh-docker.variant="slim" \
+      io.github.rin721.dsh-docker.runtime="2"
 
 USER node
 WORKDIR /workspace
@@ -286,6 +287,7 @@ RUN --mount=type=cache,target=/home/node/go/pkg/mod,uid=1000,gid=1000 \
     go version
 
 LABEL org.opencontainers.image.title="DSH Docker (dev)" \
+      io.github.reina0721.dsh-docker.variant="dev" \
       io.github.rin721.dsh-docker.variant="dev" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}" \

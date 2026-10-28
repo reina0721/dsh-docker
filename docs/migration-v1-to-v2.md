@@ -98,7 +98,7 @@ Removed/ignored:
 
 New/changed:
 
-- `DSH_IMAGE` should be `ghcr.io/rin721/dsh-docker:2`.
+- `DSH_IMAGE` should be `ghcr.io/reina0721/dsh-docker:2`.
 - `DSH_IMAGE_VARIANT=dev|slim`.
 - `DSH_IMAGE_MIRROR` and `DSH_IMAGE_MIRRORS` for China.
 - `DSH_AUTH_FILE` defaults to `/home/node/.dsh-auth/users.htpasswd` inside the

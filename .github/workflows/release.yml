@@ -11,7 +11,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  REPO: rin721/dsh-docker
+  REPO: reina0721/dsh-docker
 
 jobs:
   version:

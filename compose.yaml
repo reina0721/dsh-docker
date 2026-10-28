@@ -2,7 +2,7 @@ x-dsh-docker: "2"
 
 services:
   dsh:
-    image: "${DSH_IMAGE:-ghcr.io/rin721/dsh-docker:2}"
+    image: "${DSH_IMAGE:-ghcr.io/reina0721/dsh-docker:2}"
     restart: unless-stopped
     working_dir: /workspace
     environment:

@@ -10,7 +10,7 @@
 # deployment directory, and (on a TTY) starts the interactive deploy flow.
 set -Eeuo pipefail
 
-REPO="rin721/dsh-docker"
+REPO="reina0721/dsh-docker"
 FALLBACK_VERSION="v2.0.0"
 TARGET_DIR="${DSHCTL_DIR:-$HOME/dsh-docker}"
 INSTALL_DIR="${DSHCTL_INSTALL_DIR:-$HOME/.local/bin}"
