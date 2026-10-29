@@ -98,23 +98,30 @@ impl Gateway {
             return text_response(StatusCode::BAD_REQUEST, "bad request\n", HeaderMap::new());
         }
 
-        let outcome = match basic_credentials(req.headers()) {
-            Some((username, password)) => self.auth.authorize(&username, &password).await,
-            None => AuthOutcome::Denied,
-        };
-        match outcome {
-            AuthOutcome::Allowed => {}
-            AuthOutcome::Denied => return self.unauthorized(),
-            AuthOutcome::NoUsers => {
-                return text_response(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "no authentication users configured\n",
-                    HeaderMap::new(),
-                );
+        // OAuth callback endpoint from upstream identity providers (e.g. platform.deepseek.com).
+        // Identity provider redirects are top-level cross-site navigations that do not carry Basic Auth headers.
+        // Upstream DSH strictly validates PKCE code challenge and cryptographically random state.
+        let is_oauth_callback = method == Method::GET && path == "/oauth/callback";
+
+        if !is_oauth_callback {
+            let outcome = match basic_credentials(req.headers()) {
+                Some((username, password)) => self.auth.authorize(&username, &password).await,
+                None => AuthOutcome::Denied,
+            };
+            match outcome {
+                AuthOutcome::Allowed => {}
+                AuthOutcome::Denied => return self.unauthorized(),
+                AuthOutcome::NoUsers => {
+                    return text_response(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "no authentication users configured\n",
+                        HeaderMap::new(),
+                    );
+                }
             }
         }
 
-        let external_host = match trust::validate(req.headers()) {
+        let external_host = match trust::validate_with_policy(req.headers(), is_oauth_callback) {
             Ok(host) => host,
             Err(reject) => return self.forbidden(reject),
         };

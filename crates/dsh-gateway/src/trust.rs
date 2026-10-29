@@ -30,12 +30,19 @@ impl Reject {
 /// `Sec-Fetch-Site: cross-site` is rejected; if Origin is present, its authority
 /// must equal Host's authority.  The scheme is intentionally not compared.
 pub fn validate(headers: &HeaderMap) -> Result<String, Reject> {
+    validate_with_policy(headers, false)
+}
+
+/// Validate with an option to permit cross-site navigation (specifically for OAuth callback redirects).
+pub fn validate_with_policy(headers: &HeaderMap, allow_cross_site: bool) -> Result<String, Reject> {
     let host = single_header(headers, "host").ok_or(Reject::InvalidHost)?;
     let host_authority = parse_authority(host).ok_or(Reject::InvalidHost)?;
 
-    if let Some(site) = single_header(headers, "sec-fetch-site") {
-        if site.eq_ignore_ascii_case("cross-site") {
-            return Err(Reject::CrossSite);
+    if !allow_cross_site {
+        if let Some(site) = single_header(headers, "sec-fetch-site") {
+            if site.eq_ignore_ascii_case("cross-site") {
+                return Err(Reject::CrossSite);
+            }
         }
     }
 
@@ -137,6 +144,10 @@ mod tests {
         assert_eq!(
             validate(&headers("example.com", None, Some("cross-site"))),
             Err(Reject::CrossSite)
+        );
+        assert_eq!(
+            validate_with_policy(&headers("example.com", None, Some("cross-site")), true).unwrap(),
+            "example.com"
         );
         assert_eq!(
             validate(&headers("example.com", Some("https://other.com"), None)),

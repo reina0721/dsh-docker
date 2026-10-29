@@ -177,6 +177,7 @@ DSH_IMAGE_MIRRORS=ghcr.nju.edu.cn,ghcr.m.daocloud.io
 | `dshctl image check` / `dshctl image pull` | 镜像/网络诊断与拉取 |
 | `dshctl config validate` / `dshctl config show` | 配置校验/脱敏展示 |
 | `dshctl migrate [<DIR>] [--to <DIR>]` | 将项目及运行时完整迁移至指定生产目录（或 v1 迁移） |
+| `dshctl account [status/login/where]` | 查看 DeepSeek 官网账户登录状态与 SSH 端口转发登录指南 |
 | `dshctl self-update` | 从 GitHub Releases 更新自身 |
 | `dshctl completion bash` | 生成补全脚本 |
 
@@ -295,6 +296,20 @@ dshctl migrate --dry-run
 dshctl migrate
 dshctl deploy
 ```
+
+### 登录 DeepSeek 官网账户
+
+DeepSeek 官方平台（`platform.deepseek.com`）OAuth 登录规范限定授权回调仅信任本地回环地址（`http://localhost:<端口>/oauth/callback`）。
+
+当 DSH 部署在远程 Linux 服务器时，登录官网账户的推荐方式为：
+1. **建立本地 SSH 隧道端口转发**（在您的本地电脑终端执行）：
+   ```bash
+   ssh -N -L 3080:127.0.0.1:3080 <SSH用户名>@<服务器地址> -p <SSH端口>
+   ```
+2. **在本地浏览器打开** `http://localhost:3080/` 并输入 Basic Auth 管理员密码登录。
+3. **进入 Web UI**，点击右上角「设置 (Settings) -> 账号 (Account) -> 登录 (Sign in)」。
+4. 浏览器将弹出 DeepSeek 官方登录窗口，完成登录后会自动回调至 `http://localhost:3080/oauth/callback`。
+5. 网关与 DSH 自动放行该 OAuth 回调端点并完成 PKCE 换票，凭据将永久保存在 `.runtime/home/dsh/.credentials.yaml` 中，重启与升级均不受影响。
 
 回滚：`git checkout <v1 tag>` 后使用旧 Compose/镜像启动；`.runtime` 不会被新版本删除。详见 [迁移指南](docs/migration-v1-to-v2.md)。
 

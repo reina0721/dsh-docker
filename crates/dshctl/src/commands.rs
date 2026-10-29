@@ -20,9 +20,10 @@ use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
 use crate::{
-    Cli, Commands, CompletionArgs, ConfigCommands, DeployArgs, DoctorArgs, GitCommands,
-    ImageCommands, InitArgs, LogsArgs, MigrateArgs, RebuildArgs, RestoreArgs, SelfUpdateArgs,
-    SshCommands, StatusArgs, UpdateArgs, UpgradeArgs, UserCommands, backup,
+    AccountArgs, AccountSubcommand, Cli, Commands, CompletionArgs, ConfigCommands, DeployArgs,
+    DoctorArgs, GitCommands, ImageCommands, InitArgs, LogsArgs, MigrateArgs, RebuildArgs,
+    RestoreArgs, SelfUpdateArgs, SshCommands, StatusArgs, UpdateArgs, UpgradeArgs, UserCommands,
+    backup,
     docker::{Docker, RUNTIME_LABEL, RUNTIME_LABEL_VALUE},
     git::GitConfig,
     runtime,
@@ -112,6 +113,7 @@ pub fn run(cli: Cli) -> Result<()> {
             }
         },
         Commands::Migrate(args) => cmd_migrate(&config, cli.verbose, args),
+        Commands::Account(args) => cmd_account(&config, cli.verbose, args),
         Commands::Completion(args) => cmd_completion(args),
         Commands::Version => {
             println!(
@@ -332,9 +334,10 @@ fn status_text(config: &Config, docker: &Docker, verbose: bool) -> Result<()> {
     println!("Auth users   : {users}");
     println!("Image        : {image}");
     println!("Variant      : {}", config.image_variant);
-    let dsh_ver = detect_current_dsh_version(docker, config)
-        .unwrap_or_else(|| config.dsh_version.clone());
+    let dsh_ver =
+        detect_current_dsh_version(docker, config).unwrap_or_else(|| config.dsh_version.clone());
     println!("DSH version  : {dsh_ver}");
+    println!("Account      : {}", detect_account_status(config));
     println!("HTTP compat  : {}", config.compat);
     if verbose {
         println!("Project      : {}", config.project_dir.display());
@@ -346,6 +349,102 @@ fn status_text(config: &Config, docker: &Docker, verbose: bool) -> Result<()> {
         Err(error) => println!("HTTP check   : unavailable ({error:#})"),
     }
     Ok(())
+}
+
+pub fn detect_account_status(config: &Config) -> String {
+    let creds_file = config.home_dir().join("dsh").join(".credentials.yaml");
+    if let Ok(content) = fs::read_to_string(&creds_file) {
+        if content.contains("account:platform") {
+            return "logged in (DeepSeek official)".to_string();
+        }
+    }
+    let ephem = config.home_dir().join(".credentials.yaml");
+    if let Ok(content) = fs::read_to_string(&ephem) {
+        if content.contains("account:platform") {
+            return "logged in (DeepSeek official)".to_string();
+        }
+    }
+    format!(
+        "not logged in (use SSH tunnel to sign in: ssh -N -L {port}:127.0.0.1:{port} user@host)",
+        port = config.dsh_port
+    )
+}
+
+fn cmd_account(config: &Config, _verbose: bool, args: AccountArgs) -> Result<()> {
+    let creds_file = config.home_dir().join("dsh").join(".credentials.yaml");
+    let is_logged_in = fs::read_to_string(&creds_file)
+        .map(|content| content.contains("account:platform"))
+        .unwrap_or(false)
+        || fs::read_to_string(config.home_dir().join(".credentials.yaml"))
+            .map(|content| content.contains("account:platform"))
+            .unwrap_or(false);
+
+    let subcmd = args.command.unwrap_or(AccountSubcommand::Status);
+    match subcmd {
+        AccountSubcommand::Status => {
+            println!("\nDeepSeek Official Account Status:");
+            if is_logged_in {
+                println!("  Status     : Logged in (official account token active)");
+                println!("  Platform   : https://platform.deepseek.com");
+                println!("  Credentials: {}", creds_file.display());
+            } else {
+                println!("  Status     : Not logged in");
+                println!(
+                    "  Note       : Run 'dshctl account login' for instructions on signing in."
+                );
+            }
+            println!();
+            Ok(())
+        }
+        AccountSubcommand::Where => {
+            println!("\nCredentials location:");
+            println!("  Host path      : {}", creds_file.display());
+            println!("  Container path : /home/node/.dsh/.credentials.yaml");
+            println!("  Runtime persist: {}", config.home_dir().display());
+            println!();
+            Ok(())
+        }
+        AccountSubcommand::Login => {
+            println!("\n=== DeepSeek 官网账户登录指南 ===");
+            println!();
+            println!("DeepSeek 官方平台（platform.deepseek.com）OAuth 登录规范：");
+            println!(
+                "官方认证服务器严格限定 OAuth 回调仅信任本地回环地址（http://localhost:<端口>/oauth/callback）。"
+            );
+            println!();
+            println!(
+                "如果您在远程 Linux 服务器上部署了 dsh-docker，请通过以下步骤进行官网账户登录："
+            );
+            println!();
+            println!(
+                "1. 在您的本地电脑终端（Windows PowerShell / macOS Terminal / Linux Shell）建立 SSH 端口转发隧道："
+            );
+            println!(
+                "   ssh -N -L {port}:127.0.0.1:{port} <SSH用户名>@<服务器地址> -p <SSH端口>",
+                port = config.dsh_port
+            );
+            println!();
+            println!("2. 在您的本地浏览器中访问：");
+            println!("   http://localhost:{}/", config.dsh_port);
+            println!();
+            println!("3. 使用 Basic Auth 管理员账号密码登录进入 DSH Web UI。");
+            println!(
+                "   点击右上角设置图标（Settings）-> 账号（Account）-> 点击「登录 (Sign in)」按钮。"
+            );
+            println!();
+            println!("4. 浏览器将弹出 DeepSeek 官方登录页面，完成登录授权。");
+            println!(
+                "   平台会自动回调至 http://localhost:{}/oauth/callback 完成凭据存盘。",
+                config.dsh_port
+            );
+            println!();
+            println!("5. 凭据将持久化保存在 host 目录：");
+            println!("   {}", creds_file.display());
+            println!("   后续即使容器重启或升级，登录状态均持久保留。");
+            println!();
+            Ok(())
+        }
+    }
 }
 
 fn cmd_doctor(config: &Config, verbose: bool, args: DoctorArgs) -> Result<()> {
@@ -1801,11 +1900,7 @@ mod tests {
     fn test_set_env_key_updates_existing_and_commented() {
         let dir = tempfile::tempdir().unwrap();
         let env_file = dir.path().join(".env");
-        fs::write(
-            &env_file,
-            "PORT=3080\n# DSH_VERSION=0.2.0\nOTHER=test\n",
-        )
-        .unwrap();
+        fs::write(&env_file, "PORT=3080\n# DSH_VERSION=0.2.0\nOTHER=test\n").unwrap();
 
         set_env_key(&env_file, "DSH_VERSION", "0.2.1-rc.5").unwrap();
         let content = fs::read_to_string(&env_file).unwrap();

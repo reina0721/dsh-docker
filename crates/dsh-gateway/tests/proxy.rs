@@ -311,3 +311,79 @@ async fn websocket_upgrade_is_proxied() {
     let _ = timeout(Duration::from_secs(2), gateway).await;
     upstream.abort();
 }
+
+#[tokio::test]
+async fn oauth_callback_bypasses_basic_auth_and_cross_site() {
+    let auth_dir = tempfile::tempdir().unwrap();
+    let auth_path = auth_dir.path().join("users.htpasswd");
+    let mut users = UserStore::new();
+    users.upsert("alice", dsh_auth::hash_password(b"secret", 4).unwrap());
+    users.write_atomic(&auth_path, 0o600).unwrap();
+
+    let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream_port = upstream_listener.local_addr().unwrap().port();
+    let upstream = tokio::spawn(async move {
+        loop {
+            let Ok((stream, _)) = upstream_listener.accept().await else {
+                break;
+            };
+            tokio::spawn(async move {
+                let service = service_fn(|request: Request<Incoming>| async move {
+                    if request.uri().path() == "/oauth/callback" {
+                        let query = request.uri().query().unwrap_or("");
+                        let mut response =
+                            Response::new(Full::new(Bytes::from(format!("oauth:{query}"))));
+                        response
+                            .headers_mut()
+                            .insert(header::CONTENT_TYPE, "text/plain".parse().unwrap());
+                        Ok::<_, Infallible>(response)
+                    } else {
+                        let mut response = Response::new(Full::new(Bytes::from("other")));
+                        *response.status_mut() = http::StatusCode::NOT_FOUND;
+                        Ok::<_, Infallible>(response)
+                    }
+                });
+                let _ = http1::Builder::new()
+                    .serve_connection(TokioIo::new(stream), service)
+                    .await;
+            });
+        }
+    });
+
+    let port = free_port().await;
+    let listen: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+    let upstream_socket: SocketAddr = format!("127.0.0.1:{upstream_port}").parse().unwrap();
+    let config = GatewayConfig::for_test(listen, upstream_socket, &auth_path);
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let gateway = tokio::spawn(serve(config, async move {
+        let _ = shutdown_rx.await;
+    }));
+    wait_ready(listen).await;
+
+    // Normal path without basic auth should return 401
+    let normal = request(
+        listen,
+        "GET /some/path HTTP/1.1\r\nHost: localhost\r\n\r\n".to_string(),
+    )
+    .await;
+    assert!(normal.starts_with("HTTP/1.1 401"), "{normal}");
+
+    // OAuth callback without basic auth AND with Sec-Fetch-Site: cross-site MUST succeed (forwarded to upstream)
+    let callback = request(
+        listen,
+        "GET /oauth/callback?code=testcode&state=teststate HTTP/1.1\r\n\
+         Host: localhost\r\n\
+         Sec-Fetch-Site: cross-site\r\n\r\n"
+            .to_string(),
+    )
+    .await;
+    assert!(callback.starts_with("HTTP/1.1 200"), "{callback}");
+    assert!(
+        callback.contains("oauth:code=testcode&state=teststate"),
+        "{callback}"
+    );
+
+    let _ = shutdown_tx.send(());
+    let _ = timeout(Duration::from_secs(2), gateway).await;
+    upstream.abort();
+}

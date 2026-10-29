@@ -15,7 +15,7 @@
 set -Eeuo pipefail
 
 REPO="reina0721/dsh-docker"
-FALLBACK_VERSION="v2.0.5"
+FALLBACK_VERSION="v2.0.6"
 
 # Defaults
 TARGET_DIR="${DSHCTL_DIR:-$HOME/dsh-docker}"

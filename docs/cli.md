@@ -37,7 +37,7 @@ runtime paths. JSON schema:
 
 ```json
 {
-  "cli_version": "2.0.5",
+  "cli_version": "2.0.6",
   "project_dir": "...",
   "runtime_dir": "...",
   "image": "ghcr.io/reina0721/dsh-docker:2",
@@ -143,6 +143,13 @@ Migrates the installation to a new directory, or migrates legacy v1 auth:
   - Automatically starts and checks health for the service from the new production location (unless `--no-deploy` is passed).
 - **Legacy Auth Migration** (when no target directory is given):
   - Copies `users.caddy` to `users.htpasswd`, updates a v1 `:latest` image reference to `:2`, creates the runtime tree, and prints the next step. The old auth file is kept.
+
+### `account [status | login | where]`
+
+Inspects or manages DeepSeek official account login:
+- `account status` — checks if the deployment is authenticated with a DeepSeek official account (`.runtime/home/dsh/.credentials.yaml`).
+- `account login` — outputs the step-by-step guidance on signing into your official DeepSeek account via SSH port forwarding.
+- `account where` — displays the host and container paths where credentials and runtime data are persisted.
 
 ### `self-update [--check]`
 

@@ -37,7 +37,7 @@ $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $Repo = 'reina0721/dsh-docker'
-$FallbackVersion = 'v2.0.5'
+$FallbackVersion = 'v2.0.6'
 $MirrorPrefixes = @('https://ghfast.top/', 'https://gh-proxy.com/')
 
 function Write-Info($Message) { Write-Host $Message }

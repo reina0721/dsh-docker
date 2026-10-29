@@ -81,6 +81,8 @@ pub enum Commands {
     Config(ConfigArgs),
     /// Migrate a v1 deployment to v2, or migrate this project to a new target directory.
     Migrate(MigrateArgs),
+    /// Inspect or manage DeepSeek official account login.
+    Account(AccountArgs),
     /// Generate shell completions.
     Completion(CompletionArgs),
     /// Print version and target information.
@@ -437,6 +439,22 @@ pub struct MigrateArgs {
     /// Do not prompt for confirmation.
     #[arg(long, short)]
     pub yes: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct AccountArgs {
+    #[command(subcommand)]
+    pub command: Option<AccountSubcommand>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AccountSubcommand {
+    /// Show official account login and credential status.
+    Status,
+    /// Guide or show how to sign in to your DeepSeek official account.
+    Login,
+    /// Show where credentials and runtime data are stored.
+    Where,
 }
 
 #[derive(Debug, Args)]
