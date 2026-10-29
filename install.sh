@@ -391,6 +391,7 @@ fi
 # ==============================================================================
 mkdir -p "$TARGET_DIR"
 mkdir -p "$TARGET_DIR/bin"
+cd "$TARGET_DIR"
 
 if [ "$FROM_SOURCE" -eq 1 ]; then
     if [ ! -f Cargo.toml ] || [ ! -f compose.yaml ]; then
@@ -598,6 +599,7 @@ if [ "$DO_DEPLOY" -eq 1 ]; then
     log "================================================================"
     log "正在本地极速构建 Docker 镜像并启动容器..."
     log "================================================================"
+    cd "$TARGET_DIR"
     if [ "$MIRROR_POLICY" = "global" ]; then
         "$DSHCTL" --dir "$TARGET_DIR" deploy --yes
     else
