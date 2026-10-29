@@ -37,7 +37,7 @@ runtime paths. JSON schema:
 
 ```json
 {
-  "cli_version": "2.0.4",
+  "cli_version": "2.0.5",
   "project_dir": "...",
   "runtime_dir": "...",
   "image": "ghcr.io/reina0721/dsh-docker:2",
@@ -131,10 +131,18 @@ Upgrades the DeepSeek Harness package (`@deepseek-ai/dsh`) to the latest upstrea
 - `config validate` — parse and validate `.env` without Docker.
 - `config show` — JSON with secrets and proxy credentials redacted.
 
-### `migrate [--dry-run]`
+### `migrate [<DEST>] [--to <DIR>] [--copy] [--force] [--no-deploy] [--dry-run] [-y]`
 
-Copies `users.caddy` to `users.htpasswd`, updates a v1 `:latest` image reference to
-`:2`, creates the runtime tree, and prints the next step. The old auth file is kept.
+Migrates the installation to a new directory, or migrates legacy v1 auth:
+- **Directory Migration** (`--to <DIR>` or positional `DEST`):
+  - Safely stops running services in the current directory (`docker compose down`) to cleanly release host ports and mounts.
+  - Recursively transfers all files, configs, and `.runtime/` persistent state (including SSH keys, Git credentials, auth databases) to the destination.
+  - Updates system symlink (`/usr/local/bin/dshctl`) if it was configured.
+  - Removes the old source directory (or retains it if `--copy` is specified).
+  - Re-establishes execution permissions and launchers in the target directory.
+  - Automatically starts and checks health for the service from the new production location (unless `--no-deploy` is passed).
+- **Legacy Auth Migration** (when no target directory is given):
+  - Copies `users.caddy` to `users.htpasswd`, updates a v1 `:latest` image reference to `:2`, creates the runtime tree, and prints the next step. The old auth file is kept.
 
 ### `self-update [--check]`
 

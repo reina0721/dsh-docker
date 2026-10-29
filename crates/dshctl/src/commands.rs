@@ -111,7 +111,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 Ok(())
             }
         },
-        Commands::Migrate(args) => cmd_migrate(&config, args),
+        Commands::Migrate(args) => cmd_migrate(&config, cli.verbose, args),
         Commands::Completion(args) => cmd_completion(args),
         Commands::Version => {
             println!(
@@ -1066,7 +1066,12 @@ fn cmd_image_check(config: &Config, verbose: bool, network: bool) -> Result<()> 
     Ok(())
 }
 
-fn cmd_migrate(config: &Config, args: MigrateArgs) -> Result<()> {
+fn cmd_migrate(config: &Config, verbose: bool, args: MigrateArgs) -> Result<()> {
+    let dest_dir = args.to.clone().or_else(|| args.dest.clone());
+    if let Some(target) = dest_dir {
+        return cmd_migrate_dir(config, verbose, target, args);
+    }
+
     let actions = [
         "copy .runtime/auth/users.caddy to users.htpasswd".to_owned(),
         "update DSH_IMAGE from the v1 latest tag to :2".to_owned(),
@@ -1093,6 +1098,210 @@ fn cmd_migrate(config: &Config, args: MigrateArgs) -> Result<()> {
         println!("Updated DSH_IMAGE to the v2 tag (previous .env backed up).");
     }
     println!("\nNext: dshctl deploy");
+    Ok(())
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
+    if !dst.exists() {
+        fs::create_dir_all(dst)
+            .with_context(|| format!("failed to create directory {}", dst.display()))?;
+    }
+    for entry in
+        fs::read_dir(src).with_context(|| format!("failed to read directory {}", src.display()))?
+    {
+        let entry = entry?;
+        let entry_type = entry.file_type()?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+
+        if entry_type.is_symlink() {
+            #[cfg(unix)]
+            {
+                let link_target = fs::read_link(&src_path)?;
+                let _ = fs::remove_file(&dst_path);
+                std::os::unix::fs::symlink(&link_target, &dst_path)?;
+            }
+            #[cfg(windows)]
+            {
+                let _ = fs::copy(&src_path, &dst_path);
+            }
+        } else if entry_type.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            fs::copy(&src_path, &dst_path).with_context(|| {
+                format!(
+                    "failed to copy {} to {}",
+                    src_path.display(),
+                    dst_path.display()
+                )
+            })?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(metadata) = fs::metadata(&src_path) {
+                    let _ = fs::set_permissions(&dst_path, metadata.permissions());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cmd_migrate_dir(
+    config: &Config,
+    verbose: bool,
+    target: PathBuf,
+    args: MigrateArgs,
+) -> Result<()> {
+    let source = config
+        .project_dir
+        .canonicalize()
+        .unwrap_or_else(|_| config.project_dir.clone());
+    let target = if target.starts_with("~") {
+        if let Ok(home) = std::env::var("HOME") {
+            PathBuf::from(format!("{}{}", home, &target.to_string_lossy()[1..]))
+        } else {
+            target
+        }
+    } else if target.is_absolute() {
+        target
+    } else {
+        std::env::current_dir()?.join(target)
+    };
+
+    if source == target {
+        bail!(
+            "source directory and target directory are the same: {}",
+            source.display()
+        );
+    }
+
+    println!("================================================================");
+    println!("             DSH 生产部署目录迁移 (Migration)                   ");
+    println!("================================================================");
+    println!("当前目录 (Source) : {}", source.display());
+    println!("目标目录 (Target) : {}", target.display());
+    println!(
+        "迁移模式 (Mode)   : {}",
+        if args.copy {
+            "复制 (Copy)"
+        } else {
+            "移动 (Move / Relocate)"
+        }
+    );
+    println!(
+        "自动启动 (Deploy) : {}",
+        if args.no_deploy {
+            "否 (No)"
+        } else {
+            "是 (Yes)"
+        }
+    );
+
+    if target.exists() && !args.force {
+        let is_empty = fs::read_dir(&target)
+            .map(|mut d| d.next().is_none())
+            .unwrap_or(false);
+        if !is_empty {
+            bail!(
+                "目标目录 '{}' 已存在且非空；若要覆盖请加上 --force",
+                target.display()
+            );
+        }
+    }
+
+    if args.dry_run {
+        println!("\nDry run: 演练完成，未进行任何实际文件操作。");
+        return Ok(());
+    }
+
+    if !args.yes && io::stdin().is_terminal() {
+        print!("\n确认执行迁移操作吗? [Y/n]: ");
+        io::stdout().flush()?;
+        let mut resp = String::new();
+        io::stdin().read_line(&mut resp)?;
+        let t = resp.trim();
+        if !t.is_empty() && !t.eq_ignore_ascii_case("y") && !t.eq_ignore_ascii_case("yes") {
+            println!("已取消操作。");
+            return Ok(());
+        }
+    }
+
+    // 1. 停止原目录正在运行的容器服务
+    let docker_client = docker(config, verbose);
+    if docker_client.require().is_ok() {
+        println!("正在安全停止源目录中运行的容器服务...");
+        let _ = docker_client.down();
+    }
+
+    // 2. 确保目标目录的上级目录存在
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("创建目标父目录失败: {}", parent.display()))?;
+    }
+
+    // 3. 复制所有文件与运行时持久化数据到目标目录
+    println!("正在同步所有文件与持久化数据至 {}...", target.display());
+    copy_dir_recursive(&source, &target)?;
+
+    // 4. 更新系统软链接 (如 /usr/local/bin/dshctl)
+    #[cfg(unix)]
+    {
+        let usr_local_bin = Path::new("/usr/local/bin/dshctl");
+        if let Ok(link_target) = fs::read_link(usr_local_bin) {
+            if link_target.starts_with(&source) {
+                let new_target = target.join("bin/dshctl");
+                let _ = fs::remove_file(usr_local_bin);
+                let _ = std::os::unix::fs::symlink(&new_target, usr_local_bin);
+                println!(
+                    "已更新系统全局软链接: /usr/local/bin/dshctl -> {}",
+                    new_target.display()
+                );
+            }
+        }
+    }
+
+    // 5. 移动模式下清理源目录
+    if !args.copy {
+        println!("正在清理原安装目录 {}...", source.display());
+        fs::remove_dir_all(&source)
+            .with_context(|| format!("删除原目录失败: {}", source.display()))?;
+    }
+
+    // 6. 恢复目标目录的执行权限与入口软链接
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let target_dshctl = target.join("bin/dshctl");
+        if target_dshctl.is_file() {
+            let _ = fs::set_permissions(&target_dshctl, fs::Permissions::from_mode(0o755));
+        }
+        let target_entrypoint = target.join("bin/dsh-entrypoint");
+        if target_entrypoint.is_file() {
+            let _ = fs::set_permissions(&target_entrypoint, fs::Permissions::from_mode(0o755));
+        }
+        let root_launcher = target.join("dshctl");
+        let _ = fs::remove_file(&root_launcher);
+        let _ = std::os::unix::fs::symlink("bin/dshctl", &root_launcher);
+    }
+
+    // 7. 在新目录下启动服务并完成健康检查
+    if !args.no_deploy {
+        println!("正在从新目录启动 DSH 服务...");
+        let new_config = Config::load(&target)?;
+        let new_docker = Docker::new(new_config.clone(), verbose);
+        new_docker.require()?;
+        new_docker.compose_config_check()?;
+        new_docker.up()?;
+        wait_health(&new_config)?;
+        status_text(&new_config, &new_docker, true)?;
+    }
+
+    println!("\n🎉 成功将项目完整迁移至新目录: {}", target.display());
+    println!(
+        "后续管理请进入新目录执行: cd {} && ./dshctl status",
+        target.display()
+    );
     Ok(())
 }
 
@@ -1606,5 +1815,22 @@ mod tests {
         set_env_key(&env_file, "NEW_KEY", "value").unwrap();
         let content2 = fs::read_to_string(&env_file).unwrap();
         assert!(content2.contains("NEW_KEY=value"));
+    }
+
+    #[test]
+    fn test_copy_dir_recursive_copies_files_and_subdirs() {
+        let src_dir = tempfile::tempdir().unwrap();
+        let dst_dir = tempfile::tempdir().unwrap();
+
+        let sub = src_dir.path().join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        fs::write(src_dir.path().join("file1.txt"), b"hello").unwrap();
+        fs::write(sub.join("file2.txt"), b"world").unwrap();
+
+        let target = dst_dir.path().join("migrated");
+        copy_dir_recursive(src_dir.path(), &target).unwrap();
+
+        assert_eq!(fs::read(target.join("file1.txt")).unwrap(), b"hello");
+        assert_eq!(fs::read(target.join("sub/file2.txt")).unwrap(), b"world");
     }
 }

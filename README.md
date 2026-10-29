@@ -176,7 +176,7 @@ DSH_IMAGE_MIRRORS=ghcr.nju.edu.cn,ghcr.m.daocloud.io
 | `dshctl rebuild` | 强制本地构建 |
 | `dshctl image check` / `dshctl image pull` | 镜像/网络诊断与拉取 |
 | `dshctl config validate` / `dshctl config show` | 配置校验/脱敏展示 |
-| `dshctl migrate --dry-run` | v1 → v2 迁移 |
+| `dshctl migrate [<DIR>] [--to <DIR>]` | 将项目及运行时完整迁移至指定生产目录（或 v1 迁移） |
 | `dshctl self-update` | 从 GitHub Releases 更新自身 |
 | `dshctl completion bash` | 生成补全脚本 |
 
@@ -281,6 +281,11 @@ Core 默认只监听 `127.0.0.1:3080`，TLS 由你现有的 Nginx/Caddy/1Panel/T
 
 # 更新镜像并重建（不删除 .runtime）
 ./dshctl update --backup
+
+# 将测试安装目录及全部配置与持久化数据平滑迁移至正式生产目录（如 /workapps/dsh-docker）
+./dshctl migrate --to /workapps/dsh-docker
+# 或直接简写目标路径：
+./dshctl migrate /workapps/dsh-docker
 
 # 更新 dshctl CLI 自身到 GitHub 最新 Release
 ./dshctl self-update

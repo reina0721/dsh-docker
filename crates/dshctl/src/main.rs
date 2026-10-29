@@ -79,7 +79,7 @@ pub enum Commands {
     Image(ImageArgs),
     /// Validate or show configuration.
     Config(ConfigArgs),
-    /// Migrate a v1 deployment to v2.
+    /// Migrate a v1 deployment to v2, or migrate this project to a new target directory.
     Migrate(MigrateArgs),
     /// Generate shell completions.
     Completion(CompletionArgs),
@@ -416,9 +416,27 @@ pub struct ConfigShowArgs {
 
 #[derive(Debug, Args)]
 pub struct MigrateArgs {
+    /// Target directory to migrate this installation to (e.g. /workapps/dsh-docker).
+    #[arg(long, value_name = "DIR")]
+    pub to: Option<PathBuf>,
+    /// Target directory to migrate this installation to (positional alias).
+    #[arg(value_name = "DEST")]
+    pub dest: Option<PathBuf>,
+    /// Keep source directory after copying (default is to move/relocate).
+    #[arg(long)]
+    pub copy: bool,
+    /// Overwrite or merge if target directory already exists.
+    #[arg(long)]
+    pub force: bool,
+    /// Do not automatically deploy/start the service in the target directory.
+    #[arg(long)]
+    pub no_deploy: bool,
     /// Print planned actions without changing files.
     #[arg(long)]
     pub dry_run: bool,
+    /// Do not prompt for confirmation.
+    #[arg(long, short)]
+    pub yes: bool,
 }
 
 #[derive(Debug, Args)]
