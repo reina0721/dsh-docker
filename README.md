@@ -165,12 +165,13 @@ DSH_IMAGE_MIRRORS=ghcr.nju.edu.cn,ghcr.m.daocloud.io
 | `dshctl status [--json]` | 服务、HTTP、认证、镜像状态 |
 | `dshctl doctor [--fix] [--network] [--json]` | 诊断 Docker、端口、配置、权限、认证、镜像与网络 |
 | `dshctl logs -f` / `dshctl shell` / `dshctl exec -- cmd` | 日志/终端/容器内命令 |
-| `dshctl user add <name>` | 创建或修改密码（bcrypt，本地生成，无需重启） |
+| `dshctl user add <name>` | 创建或修改密码（bcrypt，本地生成，无需重启，支持 `--insecure-password`） |
 | `dshctl user list` / `dshctl user remove <name>` | 查看/删除用户 |
 | `dshctl ssh list/generate/import/remove/test` | 管理持久化 SSH Key（不打印私钥） |
 | `dshctl git setup --name ... --email ... [--key ...]` | 配置容器内 Git 身份/默认 Key |
 | `dshctl backup [path] [--quiesce]` | 备份 `.env` + `.runtime`（0600） |
 | `dshctl restore <archive> --yes` | 校验并恢复；失败回滚 |
+| `dshctl upgrade [--check] [--rebuild]` | 检查并升级 DSH (@deepseek-ai/dsh) 到官方最新版本 |
 | `dshctl update [--source] [--backup]` | 拉取最新镜像并重建 |
 | `dshctl rebuild` | 强制本地构建 |
 | `dshctl image check` / `dshctl image pull` | 镜像/网络诊断与拉取 |

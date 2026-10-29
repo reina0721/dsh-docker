@@ -73,11 +73,19 @@ also change `DSH_PROXY_PORT`. Then `dshctl up` / `dshctl deploy`.
 
 ## How do I update?
 
+To upgrade DSH (`@deepseek-ai/dsh`) to the latest upstream release:
+
+```bash
+dshctl upgrade
+```
+
+To update the Docker image and recreate the container:
+
 ```bash
 dshctl update --backup
 ```
 
-To update the CLI itself:
+To update the `dshctl` CLI binary itself from GitHub Releases:
 
 ```bash
 dshctl self-update

@@ -37,11 +37,12 @@ runtime paths. JSON schema:
 
 ```json
 {
-  "cli_version": "2.0.0",
+  "cli_version": "2.0.4",
   "project_dir": "...",
   "runtime_dir": "...",
   "image": "ghcr.io/reina0721/dsh-docker:2",
   "variant": "dev",
+  "dsh_version": "0.2.1-rc.5",
   "image_label": "2",
   "services": [],
   "http": { "url": "http://127.0.0.1:3080", "status": 401, "error": null },
@@ -64,8 +65,9 @@ container. `exec -- cmd args` runs a command in the container.
 
 ### `user`
 
-- `user add NAME [--cost N] [--password-stdin|--password-file PATH] [--generate]`
-  creates or updates a user. Passwords are read without echo by default.
+- `user add NAME [--cost N] [--password-stdin|--password-file PATH] [--insecure-password] [--generate]`
+  creates or updates a user. Passwords are read without echo by default. `--insecure-password`
+  allows setting passwords shorter than the configured `AUTH_MIN_PASSWORD_LENGTH`.
 - `user list [--json]`
 - `user remove NAME [--yes]`
 

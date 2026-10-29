@@ -49,16 +49,16 @@ The auth file is `.runtime/auth/users.htpasswd` (0644) in `username hash` format
 
 ## DSH build
 
-| Variable | Default |
-| --- | --- |
-| `DSH_VERSION` | `latest` |
-| `DSH_PERMISSION_MODE` | `workspace-write` |
-| `DSH_TELEMETRY_DISABLED` | `1` |
-| `INSTALL_GO_DEV_TOOLS` | `true` |
-| `NODE_VERSION` | `24.18.0` |
-| `GO_VERSION` | `1.26.5` |
-| `RUST_VERSION` | `1.90.0` |
-| `PNPM_VERSION` | `11.7.0` |
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `DSH_VERSION` | `0.2.1-rc.5` | Pinned upstream `@deepseek-ai/dsh` version; automatically locked to latest on install; upgrade with `dshctl upgrade` |
+| `DSH_PERMISSION_MODE` | `workspace-write` | Runtime permission policy |
+| `DSH_TELEMETRY_DISABLED` | `1` | Disables telemetry reporting |
+| `INSTALL_GO_DEV_TOOLS` | `true` | Installs gopls, dlv, and Go tools in dev image |
+| `NODE_VERSION` | `24.18.0` | Node.js runtime base |
+| `GO_VERSION` | `1.26.5` | Go toolchain version |
+| `RUST_VERSION` | `1.90.0` | Rust toolchain version |
+| `PNPM_VERSION` | `11.7.0` | Global pnpm package manager |
 
 ## Build acceleration (China)
 
