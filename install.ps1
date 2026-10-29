@@ -7,7 +7,7 @@
 #   Options:
 #     .\install.ps1 [-Dir C:\path] [-Port 3080] [-Bind 127.0.0.1] [-Variant dev|slim]
 #                   [-Mirror global|cn|off] [-AdminUser admin] [-AdminPassword pass]
-#                   [-Version v2.0.2] [-NoDeploy] [-Yes]
+#                   [-Version v2.0.3] [-NoDeploy] [-Yes]
 #
 # Docker Desktop with WSL2 is required for deployment.
 
@@ -37,7 +37,7 @@ $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $Repo = 'reina0721/dsh-docker'
-$FallbackVersion = 'v2.0.2'
+$FallbackVersion = 'v2.0.3'
 $MirrorPrefixes = @('https://ghfast.top/', 'https://gh-proxy.com/')
 
 function Write-Info($Message) { Write-Host $Message }

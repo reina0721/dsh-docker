@@ -15,7 +15,7 @@
 set -Eeuo pipefail
 
 REPO="reina0721/dsh-docker"
-FALLBACK_VERSION="v2.0.2"
+FALLBACK_VERSION="v2.0.3"
 
 # Defaults
 TARGET_DIR="${DSHCTL_DIR:-$HOME/dsh-docker}"
@@ -542,6 +542,13 @@ if [ "$PASSWORD_MODE" = "weak" ] || [ "$MIN_PASSWORD_LEN" -lt 12 ]; then
     USER_ADD_FLAGS+=("--insecure-password")
 fi
 printf '%s\n' "$ADMIN_PASS" | "$DSHCTL" --dir "$TARGET_DIR" user add "$ADMIN_USER" "${USER_ADD_FLAGS[@]}" >/dev/null
+
+# Ensure runtime directories are accessible to container node user
+if [ "$(id -u)" -eq 0 ] || [ -n "${SUDO_UID:-}" ]; then
+    chown -R 1000:1000 "$TARGET_DIR/.runtime" 2>/dev/null || true
+    chmod 755 "$TARGET_DIR" "$TARGET_DIR/.runtime" "$TARGET_DIR/.runtime/auth" 2>/dev/null || true
+    [ -f "$TARGET_DIR/.runtime/auth/users.htpasswd" ] && chmod 644 "$TARGET_DIR/.runtime/auth/users.htpasswd" 2>/dev/null || true
+fi
 
 # Optional completions
 if [ "$INSTALL_COMPLETIONS" -eq 1 ]; then

@@ -169,7 +169,9 @@ pub fn write_users(config: &Config, store: &UserStore) -> Result<()> {
         .with_context(|| format!("failed to create {}", config.auth_dir().display()))?;
     store
         .write_atomic(config.auth_file(), 0o644)
-        .with_context(|| format!("failed to write {}", config.auth_file().display()))
+        .with_context(|| format!("failed to write {}", config.auth_file().display()))?;
+    chown_tree_if_root(config)?;
+    Ok(())
 }
 
 pub fn has_users(config: &Config) -> Result<bool> {
@@ -177,10 +179,10 @@ pub fn has_users(config: &Config) -> Result<bool> {
 }
 
 pub fn apply_permissions(config: &Config) -> Result<()> {
-    set_mode(&config.runtime_dir, 0o750)?;
-    set_mode(&config.workspace_dir(), 0o750)?;
+    set_mode(&config.runtime_dir, 0o755)?;
+    set_mode(&config.workspace_dir(), 0o755)?;
     set_mode(&config.dsh_home(), 0o700)?;
-    set_mode(&config.auth_dir(), 0o750)?;
+    set_mode(&config.auth_dir(), 0o755)?;
     set_mode(&config.home_dir(), 0o700)?;
     set_mode(&config.home_dir().join("ssh"), 0o700)?;
     set_mode(&config.home_dir().join("gnupg"), 0o700)?;
@@ -292,7 +294,13 @@ fn chown_tree_if_root(config: &Config) -> Result<()> {
     }
     let uid = Uid::from_raw(config.runtime_uid);
     let gid = Gid::from_raw(config.runtime_gid);
-    for root in [config.workspace_dir(), config.dsh_home(), config.home_dir()] {
+    for root in [
+        config.runtime_dir.clone(),
+        config.workspace_dir(),
+        config.dsh_home(),
+        config.home_dir(),
+        config.auth_dir(),
+    ] {
         chown_recursive(&root, uid, gid);
     }
     Ok(())

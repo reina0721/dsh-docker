@@ -3,6 +3,12 @@
 All notable changes are documented here. The format follows Keep a Changelog and
 the project uses Semantic Versioning.
 
+## [2.0.3] - 2026-10-29
+
+### Fixed
+
+- Fixed directory traversal permissions and runtime user ownership for `users.htpasswd` and `.runtime/auth` when initialized as root, ensuring the in-container `node` (1000) user can access authentication databases without `503 No Users` errors.
+
 ## [2.0.2] - 2026-10-29
 
 ### Added

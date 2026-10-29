@@ -21,6 +21,6 @@ services:
         GOPROXY: "${GOPROXY:-}"
         RUSTUP_DIST_SERVER: "${RUSTUP_DIST_SERVER:-}"
         CARGO_REGISTRY: "${CARGO_REGISTRY:-}"
-        VERSION: "${DSH_DOCKER_VERSION:-2.0.2}"
+        VERSION: "${DSH_DOCKER_VERSION:-2.0.3}"
         REVISION: "${DSH_DOCKER_REVISION:-unknown}"
         CREATED: "${DSH_DOCKER_CREATED:-unknown}"
