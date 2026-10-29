@@ -2,20 +2,8 @@ name: Publish DSH Image
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    tags: ["v*"]
-    paths:
-      - Dockerfile
-      - Cargo.toml
-      - Cargo.lock
-      - crates/**
-      - assets/**
-      - .github/workflows/publish-image.yml
-  schedule:
-    - cron: "17 3 * * 1"
 
-# A force-pushed tag or a second push must not start another expensive build.
+# A manual workflow run can still be cancelled by a second trigger.
 concurrency:
   group: publish-image-${{ github.ref }}
   cancel-in-progress: true

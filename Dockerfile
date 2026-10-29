@@ -17,39 +17,45 @@ ARG BUILDARCH
 ARG CARGO_REGISTRY=
 
 WORKDIR /build
-COPY Cargo.toml Cargo.lock ./
-COPY crates ./crates
-COPY assets ./assets
+COPY . ./
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
     set -eux; \
-    if [ -n "${CARGO_REGISTRY}" ]; then \
-        case "${CARGO_REGISTRY}" in \
-            rsproxy) registry="https://rsproxy.cn/index/" ;; \
-            *) registry="${CARGO_REGISTRY}" ;; \
-        esac; \
-        printf '[source.crates-io]\nreplace-with = "mirror"\n[source.mirror]\nregistry = "sparse+%s"\n' "${registry}" \
-            > /usr/local/cargo/config.toml; \
-    fi; \
-    case "${TARGETARCH:-amd64}" in \
-        amd64) \
-            triple="x86_64-unknown-linux-gnu" ;; \
-        arm64) \
-            triple="aarch64-unknown-linux-gnu"; \
-            if [ "${BUILDARCH:-amd64}" != "arm64" ]; then \
-                apt-get update; \
-                apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross; \
-                export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc; \
-                export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc; \
-                export AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar; \
-            fi ;; \
-        *) echo "unsupported TARGETARCH=${TARGETARCH:-amd64}" >&2; exit 1 ;; \
-    esac; \
-    rustup target add "${triple}" || true; \
-    cargo build --release --locked -p dsh-gateway --bin dsh-entrypoint --target "${triple}"; \
     mkdir -p /out; \
-    cp "target/${triple}/release/dsh-entrypoint" /out/dsh-entrypoint; \
+    if [ -f "bin/dsh-entrypoint" ]; then \
+        echo "Using prebuilt bin/dsh-entrypoint"; \
+        cp "bin/dsh-entrypoint" /out/dsh-entrypoint; \
+    elif [ -f "target/release/dsh-entrypoint" ]; then \
+        echo "Using target/release/dsh-entrypoint"; \
+        cp "target/release/dsh-entrypoint" /out/dsh-entrypoint; \
+    else \
+        if [ -n "${CARGO_REGISTRY}" ]; then \
+            case "${CARGO_REGISTRY}" in \
+                rsproxy) registry="https://rsproxy.cn/index/" ;; \
+                *) registry="${CARGO_REGISTRY}" ;; \
+            esac; \
+            printf '[source.crates-io]\nreplace-with = "mirror"\n[source.mirror]\nregistry = "sparse+%s"\n' "${registry}" \
+                > /usr/local/cargo/config.toml; \
+        fi; \
+        case "${TARGETARCH:-amd64}" in \
+            amd64) \
+                triple="x86_64-unknown-linux-gnu" ;; \
+            arm64) \
+                triple="aarch64-unknown-linux-gnu"; \
+                if [ "${BUILDARCH:-amd64}" != "arm64" ]; then \
+                    apt-get update; \
+                    apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross; \
+                    export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc; \
+                    export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc; \
+                    export AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar; \
+                fi ;; \
+            *) echo "unsupported TARGETARCH=${TARGETARCH:-amd64}" >&2; exit 1 ;; \
+        esac; \
+        rustup target add "${triple}" || true; \
+        cargo build --release --locked -p dsh-gateway --bin dsh-entrypoint --target "${triple}"; \
+        cp "target/${triple}/release/dsh-entrypoint" /out/dsh-entrypoint; \
+    fi; \
     chmod 0755 /out/dsh-entrypoint
 
 # =============================================================================

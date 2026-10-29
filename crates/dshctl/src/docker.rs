@@ -345,7 +345,8 @@ impl Docker {
     pub fn build_image(&self) -> Result<()> {
         if !self.can_build() {
             bail!(
-                "local build requires Dockerfile and Cargo.toml in {}; clone the source repository first",
+                "local build requires Dockerfile and either bin/dsh-entrypoint or Cargo.toml in {}; \
+                 extract the release package or clone the source repository",
                 self.root.display()
             );
         }
@@ -361,7 +362,11 @@ impl Docker {
     }
 
     pub fn can_build(&self) -> bool {
-        self.root.join("Dockerfile").is_file() && self.root.join("Cargo.toml").is_file()
+        self.root.join("Dockerfile").is_file()
+            && (self.root.join("Cargo.toml").is_file()
+                || self.root.join("bin").join("dsh-entrypoint").is_file()
+                || self.root.join("bin").join("dsh-entrypoint.exe").is_file()
+                || self.root.join("dsh-entrypoint").is_file())
     }
 
     pub fn mirror_hosts(&self) -> Vec<String> {

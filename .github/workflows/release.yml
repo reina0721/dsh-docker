@@ -72,20 +72,37 @@ jobs:
             export CC_aarch64_unknown_linux_musl=musl-gcc
           fi
           cargo build --release --locked -p dshctl --target "$TARGET"
+          if [[ "$TARGET" == *"linux-musl"* ]]; then
+            cargo build --release --locked -p dsh-gateway --bin dsh-entrypoint --target "$TARGET"
+          fi
       - name: Package (Unix)
         if: matrix.archive == 'tar.gz'
         shell: bash
         run: |
           set -Eeuo pipefail
-          cd "target/${{ matrix.target }}/release"
-          cp ../../../LICENSE-MIT .
-          cp ../../../LICENSE-APACHE .
-          tar -czf "${GITHUB_WORKSPACE}/dshctl-${{ matrix.target }}.tar.gz" dshctl LICENSE-MIT LICENSE-APACHE
+          STAGE_DIR="${RUNNER_TEMP}/package"
+          rm -rf "$STAGE_DIR"
+          mkdir -p "$STAGE_DIR/bin" "$STAGE_DIR/assets"
+          cp "target/${{ matrix.target }}/release/dshctl" "$STAGE_DIR/bin/"
+          cp "target/${{ matrix.target }}/release/dshctl" "$STAGE_DIR/dshctl"
+          if [ -f "target/${{ matrix.target }}/release/dsh-entrypoint" ]; then
+            cp "target/${{ matrix.target }}/release/dsh-entrypoint" "$STAGE_DIR/bin/"
+          fi
+          cp Dockerfile compose.yaml compose.build.yaml .env.example LICENSE-MIT LICENSE-APACHE README.md "$STAGE_DIR/"
+          cp -r assets/* "$STAGE_DIR/assets/"
+          tar -czf "${GITHUB_WORKSPACE}/dshctl-${{ matrix.target }}.tar.gz" -C "$STAGE_DIR" .
       - name: Package (Windows)
         if: matrix.archive == 'zip'
         shell: pwsh
         run: |
-          Compress-Archive -Path "target/${{ matrix.target }}/release/dshctl.exe", "LICENSE-MIT", "LICENSE-APACHE" -DestinationPath "dshctl-${{ matrix.target }}.zip"
+          $StageDir = Join-Path $env:RUNNER_TEMP "package"
+          if (Test-Path $StageDir) { Remove-Item -Recurse -Force $StageDir }
+          New-Item -ItemType Directory -Force -Path (Join-Path $StageDir "bin"), (Join-Path $StageDir "assets") | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/dshctl.exe" (Join-Path $StageDir "bin\dshctl.exe")
+          Copy-Item "target/${{ matrix.target }}/release/dshctl.exe" (Join-Path $StageDir "dshctl.exe")
+          Copy-Item Dockerfile, compose.yaml, compose.build.yaml, .env.example, LICENSE-MIT, LICENSE-APACHE, README.md $StageDir
+          Copy-Item assets\* (Join-Path $StageDir "assets") -Recurse
+          Compress-Archive -Path "$StageDir\*" -DestinationPath "dshctl-${{ matrix.target }}.zip"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

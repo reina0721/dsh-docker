@@ -40,9 +40,14 @@ Windows PowerShell 5.1+ (Docker Desktop / WSL2 required):
 irm https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.ps1 | iex
 ```
 
-The installer verifies the binary checksum, initializes `~/dsh-docker`, and, on an
-interactive terminal, guides you through creating the first Basic Auth user and
-deploying.
+The installer verifies the package checksum and launches an interactive wizard guiding you through:
+- **Installation Directory** (default: `~/dsh-docker`, completely self-contained)
+- **Web Port** (default: `3080`) & **Bind Address** (`127.0.0.1` or `0.0.0.0`)
+- **Environment Variant** (`dev` full toolchain or `slim` lightweight)
+- **Mirror Policy** (`global` or China domestic acceleration `cn`)
+- **Admin Account & Password** (custom or generated)
+
+All installation artifacts, executables (`bin/dshctl`), Compose configurations, and runtime data are placed inside your chosen project directory. Pre-compiled static `dsh-entrypoint` binaries are bundled, allowing local Docker builds to finish in 1-2 minutes without downloading heavy Rust builder images.
 
 Open `http://127.0.0.1:3080/` and sign in with Basic Auth. The gateway captures DSH's
 one-time web token (redacted in logs) and injects it until DSH sets its auth cookie;

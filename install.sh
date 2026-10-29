@@ -2,80 +2,111 @@
 # DSH Docker installer.
 #
 # Usage:
-#   bash install.sh [--dir DIR] [--version vX.Y.Z] [--mirror global|cn|off]
-#                   [--no-deploy] [--from-source] [--system] [--completions]
-#                   [--insecure]
+#   Interactive mode (recommended):
+#     curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash
+#     # 或国内加速:
+#     curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash
 #
-# The script downloads a prebuilt dshctl, verifies SHA256SUMS, initializes a
-# deployment directory, and (on a TTY) starts the interactive deploy flow.
+#   Non-interactive mode (options/flags):
+#     bash install.sh [--dir DIR] [--port PORT] [--bind IP] [--variant dev|slim]
+#                     [--mirror global|cn|off] [--admin USER] [--password PASS]
+#                     [--version vX.Y.Z] [--no-deploy] [--yes] [--system-link]
+#                     [--insecure]
 set -Eeuo pipefail
 
 REPO="reina0721/dsh-docker"
-FALLBACK_VERSION="v2.0.0"
+FALLBACK_VERSION="v2.0.1"
+
+# Defaults
 TARGET_DIR="${DSHCTL_DIR:-$HOME/dsh-docker}"
-INSTALL_DIR="${DSHCTL_INSTALL_DIR:-$HOME/.local/bin}"
+TARGET_DIR_EXPLICIT=0
+PORT="${DSH_PORT:-3080}"
+PORT_EXPLICIT=0
+BIND_ADDR="${BIND_ADDRESS:-127.0.0.1}"
+BIND_EXPLICIT=0
+VARIANT="${DSH_IMAGE_VARIANT:-dev}"
+VARIANT_EXPLICIT=0
+MIRROR_POLICY="${DSH_IMAGE_MIRROR:-global}"
+MIRROR_EXPLICIT=0
+ADMIN_USER="admin"
+ADMIN_USER_EXPLICIT=0
+ADMIN_PASS=""
+ADMIN_PASS_EXPLICIT=0
 VERSION="${DSHCTL_VERSION:-latest}"
-MIRROR_POLICY="global"
 DO_DEPLOY=1
-FROM_SOURCE=0
-SYSTEM_INSTALL=0
+EXPLICIT_YES=0
+SYSTEM_LINK=0
+SYSTEM_LINK_EXPLICIT=0
 INSTALL_COMPLETIONS=0
 INSECURE=0
-TARGET_DIR_EXPLICIT=0
+FROM_SOURCE=0
 DOWNLOAD_MIRRORS="https://ghfast.top https://gh-proxy.com"
 
 usage() {
     cat <<'EOF'
-Install dshctl and initialize a DSH Docker deployment.
+DSH Docker 安装向导 (Interactive & Self-Contained Installer)
 
-Options:
-  --dir DIR              Deployment directory (default: ~/dsh-docker)
-  --version vX.Y.Z       Release tag (default: latest)
-  --mirror POLICY        global, cn, or off (default: global)
-  --no-deploy            Only install and initialize
-  --from-source          Build dshctl from the current source checkout
-  --system               Install to /usr/local/bin (may use sudo)
-  --completions          Install shell completions when possible
-  --insecure             Skip checksum verification (strongly discouraged)
-  -h, --help             Show this help
+用法:
+  bash install.sh [选项]
 
-Environment:
-  DSHCTL_VERSION, DSHCTL_DIR, DSHCTL_INSTALL_DIR,
-  DSHCTL_DOWNLOAD_MIRROR  Custom prefix or template containing {url}
-  DSH_IMAGE_MIRROR        Image mirror policy passed to deploy
-
-Domestic acceleration:
-  bash install.sh --mirror cn
+选项:
+  --dir DIR              项目安装目录 (默认: ~/dsh-docker)
+  --port PORT            Web 访问端口 (默认: 3080)
+  --bind IP              监听绑定地址 (默认: 127.0.0.1)
+  --variant dev|slim     开发环境变体 (默认: dev)
+  --mirror global|cn|off 网络加速策略 (默认: global)
+  --admin USER           管理员用户名 (默认: admin)
+  --password PASS        管理员访问密码 (至少12位，留空自动生成)
+  --version vX.Y.Z       指定发布版本 (默认: latest)
+  --system-link          在 /usr/local/bin 创建全局 dshctl 软链接
+  --no-deploy            仅下载解压与初始化，不立即启动 Docker 构建
+  --from-source          从当前源码编译 (本地开发使用)
+  --completions          安装 shell 补全 (bash/zsh/fish)
+  --yes, -y              非交互模式，遇到未指定项使用默认值
+  --insecure             跳过 Checksum 校验 (不推荐)
+  -h, --help             显示此帮助信息
 EOF
 }
 
 log() { printf '%s\n' "$*"; }
-warn() { printf 'warning: %s\n' "$*" >&2; }
-die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+warn() { printf '\033[33mwarning: %s\033[0m\n' "$*" >&2; }
+die() { printf '\033[31merror: %s\033[0m\n' "$*" >&2; exit 1; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --dir) TARGET_DIR="$2"; TARGET_DIR_EXPLICIT=1; shift 2 ;;
+        --port) PORT="$2"; PORT_EXPLICIT=1; shift 2 ;;
+        --bind) BIND_ADDR="$2"; BIND_EXPLICIT=1; shift 2 ;;
+        --variant) VARIANT="$2"; VARIANT_EXPLICIT=1; shift 2 ;;
+        --mirror) MIRROR_POLICY="$2"; MIRROR_EXPLICIT=1; shift 2 ;;
+        --admin) ADMIN_USER="$2"; ADMIN_USER_EXPLICIT=1; shift 2 ;;
+        --password) ADMIN_PASS="$2"; ADMIN_PASS_EXPLICIT=1; shift 2 ;;
         --version) VERSION="$2"; shift 2 ;;
-        --mirror) MIRROR_POLICY="$2"; shift 2 ;;
+        --system-link) SYSTEM_LINK=1; SYSTEM_LINK_EXPLICIT=1; shift ;;
         --no-deploy) DO_DEPLOY=0; shift ;;
         --from-source) FROM_SOURCE=1; shift ;;
-        --system) SYSTEM_INSTALL=1; shift ;;
         --completions) INSTALL_COMPLETIONS=1; shift ;;
+        --yes|-y) EXPLICIT_YES=1; shift ;;
         --insecure) INSECURE=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) die "unknown option: $1" ;;
     esac
 done
 
+# Expand ~ in TARGET_DIR
+case "$TARGET_DIR" in
+    "~"*) TARGET_DIR="${HOME}${TARGET_DIR#"~"}" ;;
+esac
+
 case "$MIRROR_POLICY" in
     global|cn|off) ;;
     *) die "--mirror must be global, cn, or off" ;;
 esac
 
-if [ "$TARGET_DIR_EXPLICIT" -eq 0 ] && [ -f compose.yaml ] && [ -f Cargo.toml ]; then
-    TARGET_DIR="$(pwd)"
-fi
+case "$VARIANT" in
+    dev|slim) ;;
+    *) die "--variant must be dev or slim" ;;
+esac
 
 case "$(uname -s)" in
     Linux) OS="linux" ;;
@@ -112,19 +143,216 @@ else
     die "need sha256sum or shasum for checksum verification"
 fi
 
-if [ "$SYSTEM_INSTALL" -eq 1 ]; then
-    INSTALL_DIR="/usr/local/bin"
+# TTY / Interactive input helpers
+IS_TTY=0
+if [ "$EXPLICIT_YES" -eq 0 ]; then
+    if [ -t 0 ] || [ -c /dev/tty ]; then
+        IS_TTY=1
+    fi
 fi
+
+prompt_input() {
+    local msg="$1"
+    local def="$2"
+    local var="$3"
+    local val=""
+    if [ -c /dev/tty ]; then
+        printf '%s' "$msg" > /dev/tty
+        read -r val < /dev/tty || true
+    else
+        printf '%s' "$msg"
+        read -r val || true
+    fi
+    val="${val#"${val%%[![:space:]]*}"}"
+    val="${val%"${val##*[![:space:]]}"}"
+    if [ -z "$val" ]; then
+        val="$def"
+    fi
+    eval "$var=\"\$val\""
+}
+
+prompt_secret() {
+    local msg="$1"
+    local var="$2"
+    local val=""
+    if [ -c /dev/tty ]; then
+        printf '%s' "$msg" > /dev/tty
+        read -r -s val < /dev/tty || true
+        printf '\n' > /dev/tty
+    else
+        printf '%s' "$msg"
+        read -r -s val || true
+        printf '\n'
+    fi
+    eval "$var=\"\$val\""
+}
+
+generate_random_password() {
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -base64 24 | tr -dc 'a-zA-Z0-9!@#$%^&*' | head -c 16
+    else
+        LC_ALL=C tr -dc 'a-zA-Z0-9!@#$%^&*' < /dev/urandom | head -c 16
+    fi
+}
+
+check_port_occupied() {
+    local p="$1"
+    if command -v ss >/dev/null 2>&1; then
+        ss -tuln 2>/dev/null | grep -Eq ":${p}\b" && return 0
+    elif command -v netstat >/dev/null 2>&1; then
+        netstat -tuln 2>/dev/null | grep -Eq ":${p}\b" && return 0
+    elif command -v lsof >/dev/null 2>&1; then
+        lsof -i ":${p}" >/dev/null 2>&1 && return 0
+    fi
+    return 1
+}
+
+# ==============================================================================
+# Interactive wizard (when in terminal and not forced non-interactive)
+# ==============================================================================
+if [ "$IS_TTY" -eq 1 ]; then
+    cat <<'EOF'
+================================================================
+            DSH Docker 交互式安装向导 (v2)
+================================================================
+本向导将引导您完成 DSH 开发环境的配置与安装。
+所有项目产物将独立集中存放在您指定的项目目录下。
+EOF
+
+    # 1. Target Directory
+    if [ "$TARGET_DIR_EXPLICIT" -eq 0 ]; then
+        printf '\n[1/6] 项目安装目录 (Installation Directory)\n'
+        printf '      将在此目录下存放 dshctl、Docker 编排文件、配置与工作区数据。\n'
+        prompt_input "请输入安装目录 [默认: ${TARGET_DIR}]: " "${TARGET_DIR}" TARGET_DIR
+        case "$TARGET_DIR" in
+            "~"*) TARGET_DIR="${HOME}${TARGET_DIR#"~"}" ;;
+        esac
+    fi
+
+    # 2. Port
+    if [ "$PORT_EXPLICIT" -eq 0 ]; then
+        printf '\n[2/6] 外部访问端口 (Port Mapping)\n'
+        printf '      DSH Web 服务的访问端口。\n'
+        while true; do
+            prompt_input "请输入访问端口 [默认: ${PORT}]: " "${PORT}" PORT
+            if ! printf '%s\n' "$PORT" | grep -Eq '^[0-9]+$' || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
+                warn "端口必须是 1 到 65535 之间的整数"
+                continue
+            fi
+            if check_port_occupied "$PORT"; then
+                warn "检测到端口 ${PORT} 当前已被占用，请确认或更换端口。"
+            fi
+            break
+        done
+    fi
+
+    # 3. Bind address
+    if [ "$BIND_EXPLICIT" -eq 0 ]; then
+        printf '\n[3/6] 监听绑定地址 (Bind Address)\n'
+        printf '      1) 127.0.0.1 (推荐: 仅本机访问，适合搭配 Nginx/Caddy 等反向代理) [默认]\n'
+        printf '      2) 0.0.0.0   (局域网或公网直接访问)\n'
+        prompt_input "请选择监听地址 [1/2, 默认: 1]: " "1" BIND_CHOICE
+        case "$BIND_CHOICE" in
+            2|0.0.0.0) BIND_ADDR="0.0.0.0" ;;
+            *) BIND_ADDR="127.0.0.1" ;;
+        esac
+    fi
+
+    # 4. Variant
+    if [ "$VARIANT_EXPLICIT" -eq 0 ]; then
+        printf '\n[4/6] 开发环境变体 (Environment Variant)\n'
+        printf '      1) dev  (完整开发环境: 包含 Node, DSH, Go, Rust, pnpm, Python) [默认]\n'
+        printf '      2) slim (轻量精简环境: 仅包含 Node, DSH, Git, SSH 基础依赖)\n'
+        prompt_input "请选择变体 [1/2, 默认: 1]: " "1" VARIANT_CHOICE
+        case "$VARIANT_CHOICE" in
+            2|slim) VARIANT="slim" ;;
+            *) VARIANT="dev" ;;
+        esac
+    fi
+
+    # 5. Mirror
+    if [ "$MIRROR_EXPLICIT" -eq 0 ]; then
+        printf '\n[5/6] 网络加速策略 (Network Acceleration)\n'
+        printf '      1) global (官方默认源: GitHub / Docker Hub / NPM 官方源) [默认]\n'
+        printf '      2) cn     (中国大陆加速: 使用国内 GitHub 代理、NPM 镜像及 Docker 镜像源)\n'
+        prompt_input "请选择加速策略 [1/2, 默认: 1]: " "1" MIRROR_CHOICE
+        case "$MIRROR_CHOICE" in
+            2|cn) MIRROR_POLICY="cn" ;;
+            *) MIRROR_POLICY="global" ;;
+        esac
+    fi
+
+    # 6. Admin Account
+    if [ "$ADMIN_USER_EXPLICIT" -eq 0 ]; then
+        printf '\n[6/6] 管理员账号设置 (Basic Auth)\n'
+        prompt_input "请输入管理员用户名 [默认: admin]: " "admin" ADMIN_USER
+    fi
+    if [ "$ADMIN_PASS_EXPLICIT" -eq 0 ]; then
+        prompt_secret "请输入管理员访问密码 (至少12位，直接回车自动生成随机安全密码): " ADMIN_PASS
+        if [ -z "$ADMIN_PASS" ]; then
+            ADMIN_PASS="$(generate_random_password)"
+            PASSWORD_WAS_GENERATED=1
+        else
+            while [ "${#ADMIN_PASS}" -lt 12 ]; do
+                warn "密码长度至少需要 12 位（当前为 ${#ADMIN_PASS} 位）"
+                prompt_secret "请重新输入密码 (直接回车自动生成): " ADMIN_PASS
+                if [ -z "$ADMIN_PASS" ]; then
+                    ADMIN_PASS="$(generate_random_password)"
+                    PASSWORD_WAS_GENERATED=1
+                    break
+                fi
+            done
+        fi
+    fi
+
+    # Confirm summary
+    printf '\n----------------------------------------------------------------\n'
+    printf '安装配置摘要:\n'
+    printf '  项目目录 : %s\n' "$TARGET_DIR"
+    printf '  访问端口 : %s\n' "$PORT"
+    printf '  绑定地址 : %s\n' "$BIND_ADDR"
+    printf '  环境变体 : %s\n' "$VARIANT"
+    printf '  加速策略 : %s\n' "$MIRROR_POLICY"
+    printf '  管理账号 : %s\n' "$ADMIN_USER"
+    if [ "${PASSWORD_WAS_GENERATED:-0}" -eq 1 ]; then
+        printf '  管理密码 : %s (自动生成)\n' "$ADMIN_PASS"
+    else
+        printf '  管理密码 : [已设置]\n'
+    fi
+    printf '----------------------------------------------------------------\n'
+    prompt_input "确认并开始安装? [Y/n]: " "Y" CONFIRM_INSTALL
+    case "$CONFIRM_INSTALL" in
+        n*|N*) log "已取消安装。"; exit 0 ;;
+    esac
+fi
+
+# Ensure password exists for non-interactive
+if [ -z "$ADMIN_PASS" ]; then
+    ADMIN_PASS="$(generate_random_password)"
+    PASSWORD_WAS_GENERATED=1
+fi
+
+# ==============================================================================
+# Download & Extract Release Bundle
+# ==============================================================================
+mkdir -p "$TARGET_DIR"
+mkdir -p "$TARGET_DIR/bin"
 
 if [ "$FROM_SOURCE" -eq 1 ]; then
     if [ ! -f Cargo.toml ] || [ ! -f compose.yaml ]; then
         die "--from-source must run from the repository checkout"
     fi
     need cargo
-    log "Building dshctl from source..."
+    log "Building dshctl and dsh-entrypoint from source..."
     cargo build --release --locked -p dshctl
-    BINARY="target/release/dshctl"
-    TARGET_DIR="$(pwd)"
+    cargo build --release --locked -p dsh-gateway --bin dsh-entrypoint || true
+    cp target/release/dshctl "$TARGET_DIR/bin/dshctl"
+    if [ -f target/release/dsh-entrypoint ]; then
+        cp target/release/dsh-entrypoint "$TARGET_DIR/bin/dsh-entrypoint"
+    fi
+    cp compose.yaml compose.build.yaml Dockerfile .env.example "$TARGET_DIR/" 2>/dev/null || true
+    mkdir -p "$TARGET_DIR/assets"
+    cp -r assets/* "$TARGET_DIR/assets/" 2>/dev/null || true
 else
     resolve_version() {
         if [ "$VERSION" != "latest" ]; then
@@ -138,6 +366,7 @@ else
             *) printf '%s\n' "$FALLBACK_VERSION" ;;
         esac
     }
+
     VERSION="$(resolve_version)"
     ASSET="dshctl-${TARGET}.tar.gz"
     BASE="https://github.com/${REPO}/releases/download/${VERSION}"
@@ -147,24 +376,12 @@ else
     download_urls() {
         url="$1"
         if [ "$MIRROR_POLICY" = "cn" ]; then
-            if [ -n "${DSHCTL_DOWNLOAD_MIRROR:-}" ]; then
-                case "$DSHCTL_DOWNLOAD_MIRROR" in
-                    *"{url}"*) printf '%s\n' "${DSHCTL_DOWNLOAD_MIRROR//\{url\}/$url}" ;;
-                    *) printf '%s\n' "${DSHCTL_DOWNLOAD_MIRROR%/}/$url" ;;
-                esac
-            fi
             for base in $DOWNLOAD_MIRRORS; do
                 printf '%s\n' "${base%/}/$url"
             done
             printf '%s\n' "$url"
         else
             printf '%s\n' "$url"
-            if [ -n "${DSHCTL_DOWNLOAD_MIRROR:-}" ]; then
-                case "$DSHCTL_DOWNLOAD_MIRROR" in
-                    *"{url}"*) printf '%s\n' "${DSHCTL_DOWNLOAD_MIRROR//\{url\}/$url}" ;;
-                    *) printf '%s\n' "${DSHCTL_DOWNLOAD_MIRROR%/}/$url" ;;
-                esac
-            fi
             for base in $DOWNLOAD_MIRRORS; do
                 printf '%s\n' "${base%/}/$url"
             done
@@ -185,7 +402,7 @@ else
     }
 
     ASSET_URL="${BASE}/${ASSET}"
-    log "Installing dshctl ${VERSION} for ${TARGET}"
+    log "Downloading DSH package ${VERSION} for ${TARGET}..."
     fetch "$ASSET_URL" "${TMP}/${ASSET}" || die "failed to download ${ASSET}"
 
     if [ "$INSECURE" -eq 1 ]; then
@@ -199,70 +416,150 @@ else
         log "Checksum verified."
     fi
 
-    tar -xzf "${TMP}/${ASSET}" -C "${TMP}"
-    BINARY="$(find "${TMP}" -type f -name dshctl | head -n 1)"
-    [ -n "$BINARY" ] || die "archive did not contain dshctl"
+    # Extract all assets directly into TARGET_DIR
+    log "Extracting files to ${TARGET_DIR}..."
+    tar -xzf "${TMP}/${ASSET}" -C "$TARGET_DIR"
 fi
 
-mkdir -p "$INSTALL_DIR"
-if [ ! -w "$INSTALL_DIR" ]; then
-    die "${INSTALL_DIR} is not writable; use --system with sudo or set DSHCTL_INSTALL_DIR"
-fi
-install -m 0755 "$BINARY" "${INSTALL_DIR}/dshctl"
-DSHCTL="${INSTALL_DIR}/dshctl"
-log "Installed: ${DSHCTL}"
-
-case ":$PATH:" in
-    *":${INSTALL_DIR}:"*) ;;
-    *) warn "${INSTALL_DIR} is not on PATH; add it to your shell profile" ;;
-esac
-
-if [ "$FROM_SOURCE" -eq 0 ]; then
-    mkdir -p "$TARGET_DIR"
-    "$DSHCTL" --dir "$TARGET_DIR" init
-else
-    "$DSHCTL" --dir "$TARGET_DIR" init
+# Ensure binaries are placed correctly inside TARGET_DIR/bin
+if [ ! -f "$TARGET_DIR/bin/dshctl" ] && [ -f "$TARGET_DIR/dshctl" ]; then
+    mkdir -p "$TARGET_DIR/bin"
+    cp "$TARGET_DIR/dshctl" "$TARGET_DIR/bin/dshctl"
 fi
 
+chmod +x "$TARGET_DIR/bin/dshctl"
+[ -f "$TARGET_DIR/bin/dsh-entrypoint" ] && chmod +x "$TARGET_DIR/bin/dsh-entrypoint" || true
+
+# Root launcher symlink inside TARGET_DIR so user can run ./dshctl directly
+ln -sf "bin/dshctl" "$TARGET_DIR/dshctl"
+
+DSHCTL="$TARGET_DIR/bin/dshctl"
+[ -x "$DSHCTL" ] || die "dshctl binary missing in ${TARGET_DIR}/bin"
+
+# ==============================================================================
+# Configure .env in TARGET_DIR
+# ==============================================================================
+ENV_FILE="$TARGET_DIR/.env"
+if [ ! -f "$ENV_FILE" ]; then
+    if [ -f "$TARGET_DIR/.env.example" ]; then
+        cp "$TARGET_DIR/.env.example" "$ENV_FILE"
+    else
+        "$DSHCTL" --dir "$TARGET_DIR" init >/dev/null 2>&1 || true
+    fi
+fi
+
+# Update settings in .env
+replace_env() {
+    local key="$1"
+    local val="$2"
+    local file="$3"
+    if grep -Eq "^${key}=" "$file" 2>/dev/null; then
+        sed -i "s|^${key}=.*|${key}=${val}|" "$file"
+    elif grep -Eq "^#\s*${key}=" "$file" 2>/dev/null; then
+        sed -i "s|^#\s*${key}=.*|${key}=${val}|" "$file"
+    else
+        printf '%s=%s\n' "$key" "$val" >> "$file"
+    fi
+}
+
+replace_env "DSH_PORT" "$PORT" "$ENV_FILE"
+replace_env "BIND_ADDRESS" "$BIND_ADDR" "$ENV_FILE"
+replace_env "DSH_IMAGE_VARIANT" "$VARIANT" "$ENV_FILE"
+replace_env "DSH_IMAGE_MODE" "build" "$ENV_FILE"
+replace_env "DSH_IMAGE" "dsh-docker:local" "$ENV_FILE"
+replace_env "DSH_IMAGE_MIRROR" "$MIRROR_POLICY" "$ENV_FILE"
+
+if [ "$MIRROR_POLICY" = "cn" ]; then
+    replace_env "BUILD_MIRROR" "cn" "$ENV_FILE"
+    replace_env "NPM_REGISTRY" "https://registry.npmmirror.com" "$ENV_FILE"
+    replace_env "GOPROXY" "https://goproxy.cn,direct" "$ENV_FILE"
+fi
+
+# ==============================================================================
+# Initialize Runtime & Create Admin User
+# ==============================================================================
+log "Initializing runtime directories in ${TARGET_DIR}..."
+"$DSHCTL" --dir "$TARGET_DIR" init
+
+log "Configuring admin account '${ADMIN_USER}'..."
+printf '%s\n' "$ADMIN_PASS" | "$DSHCTL" --dir "$TARGET_DIR" user add "$ADMIN_USER" --password-stdin >/dev/null
+
+# Optional completions
 if [ "$INSTALL_COMPLETIONS" -eq 1 ]; then
     if [ -d "$HOME/.local/share/bash-completion/completions" ]; then
-        "$DSHCTL" completion bash > "$HOME/.local/share/bash-completion/completions/dshctl"
-        log "Installed bash completion."
+        "$DSHCTL" completion bash > "$HOME/.local/share/bash-completion/completions/dshctl" || true
     fi
     if [ -d "$HOME/.zsh/completions" ]; then
-        "$DSHCTL" completion zsh > "$HOME/.zsh/completions/_dshctl"
-        log "Installed zsh completion."
+        "$DSHCTL" completion zsh > "$HOME/.zsh/completions/_dshctl" || true
     fi
     if [ -d "$HOME/.config/fish/completions" ]; then
-        "$DSHCTL" completion fish > "$HOME/.config/fish/completions/dshctl.fish"
-        log "Installed fish completion."
+        "$DSHCTL" completion fish > "$HOME/.config/fish/completions/dshctl.fish" || true
     fi
 fi
 
+# Optional system-wide symlink
+if [ "$SYSTEM_LINK_EXPLICIT" -eq 0 ] && [ "$IS_TTY" -eq 1 ]; then
+    printf '\n是否在 /usr/local/bin/dshctl 创建软链接方便全局执行? [y/N]: ' > /dev/tty
+    read -r LINK_CHOICE < /dev/tty || true
+    case "$LINK_CHOICE" in
+        y*|Y*) SYSTEM_LINK=1 ;;
+    esac
+fi
+
+if [ "$SYSTEM_LINK" -eq 1 ]; then
+    if [ -w "/usr/local/bin" ]; then
+        ln -sf "$TARGET_DIR/bin/dshctl" /usr/local/bin/dshctl
+        log "已创建系统全局快捷方式: /usr/local/bin/dshctl"
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo ln -sf "$TARGET_DIR/bin/dshctl" /usr/local/bin/dshctl
+        log "已通过 sudo 创建系统全局快捷方式: /usr/local/bin/dshctl"
+    else
+        warn "/usr/local/bin 不可写，未能创建全局快捷方式。"
+    fi
+fi
+
+# ==============================================================================
+# Local Build & Deploy
+# ==============================================================================
 if ! command -v docker >/dev/null 2>&1; then
-    warn "Docker is not installed; install Docker Engine/Desktop before deploying."
+    warn "Docker 未安装或未运行。所有文件已安装于 ${TARGET_DIR}。"
+    warn "请在安装 Docker 后，进入该目录执行 ./dshctl deploy 完成部署。"
     DO_DEPLOY=0
 fi
 
-if [ -f "$TARGET_DIR/.env" ]; then
-    "$DSHCTL" --dir "$TARGET_DIR" migrate >/dev/null 2>&1 || true
+if [ "$DO_DEPLOY" -eq 1 ]; then
+    log
+    log "================================================================"
+    log "正在本地极速构建 Docker 镜像并启动容器..."
+    log "================================================================"
+    if [ "$MIRROR_POLICY" = "global" ]; then
+        "$DSHCTL" --dir "$TARGET_DIR" deploy --yes
+    else
+        "$DSHCTL" --dir "$TARGET_DIR" deploy --mirror "$MIRROR_POLICY" --yes
+    fi
 fi
 
-if [ "$DO_DEPLOY" -eq 1 ] && [ -t 0 ]; then
-    log
-    log "Starting deployment in ${TARGET_DIR}"
-    if [ "$MIRROR_POLICY" = "global" ]; then
-        "$DSHCTL" --dir "$TARGET_DIR" deploy
-    else
-        "$DSHCTL" --dir "$TARGET_DIR" deploy --mirror "$MIRROR_POLICY"
-    fi
-else
-    log
-    log "Next steps:"
-    log "  cd ${TARGET_DIR}"
-    log "  ${DSHCTL} user add <name>"
-    log "  ${DSHCTL} deploy"
-    if [ "$MIRROR_POLICY" = "cn" ]; then
-        log "  # or: ${DSHCTL} deploy --mirror cn"
-    fi
-fi
+# ==============================================================================
+# Success Summary
+# ==============================================================================
+cat <<EOF
+
+================================================================
+               🎉 DSH Docker 安装部署成功!
+================================================================
+服务地址 : http://${BIND_ADDR}:${PORT}
+管理账号 : ${ADMIN_USER}
+管理密码 : ${ADMIN_PASS}
+
+项目目录 : ${TARGET_DIR}
+所有产物与数据已集中存放在上述项目目录下。
+
+常用管理命令 (在项目目录下执行):
+  ./dshctl status        - 查看运行状态与容器健康
+  ./dshctl logs          - 实时跟踪日志
+  ./dshctl stop / up     - 停止 / 启动服务
+  ./dshctl restart       - 重启服务
+  ./dshctl user add      - 添加新的登录用户
+  ./dshctl doctor        - 诊断部署与环境
+================================================================
+EOF

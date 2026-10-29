@@ -17,8 +17,8 @@ use std::{
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-/// Default prebuilt image for the v2 runtime.
-pub const DEFAULT_IMAGE: &str = "ghcr.io/reina0721/dsh-docker:2";
+/// Default image for local builds and deployment.
+pub const DEFAULT_IMAGE: &str = "dsh-docker:local";
 /// Default realm used in the Basic Auth challenge.
 pub const DEFAULT_REALM: &str = "DeepSeek Harness";
 /// Default bcrypt cost used for newly created passwords.
@@ -205,7 +205,7 @@ impl Config {
             .to_owned();
         let internal_port = parse_u16(&env, "DSH_INTERNAL_PORT", 3079)?;
         let image = get("DSH_IMAGE").unwrap_or(DEFAULT_IMAGE).trim().to_owned();
-        let image_mode = get("DSH_IMAGE_MODE").unwrap_or("auto").parse()?;
+        let image_mode = get("DSH_IMAGE_MODE").unwrap_or("build").parse()?;
         let image_variant = get("DSH_IMAGE_VARIANT").unwrap_or("dev").parse()?;
         let image_mirror = get("DSH_IMAGE_MIRROR").unwrap_or("global").parse()?;
         let image_mirrors = get("DSH_IMAGE_MIRRORS")
@@ -376,7 +376,11 @@ impl Config {
     /// The image reference to use after applying the dev/slim default.
     pub fn effective_image(&self) -> String {
         if self.image == DEFAULT_IMAGE && self.image_variant == ImageVariant::Slim {
-            DEFAULT_IMAGE.replace(":2", ":2-slim")
+            "dsh-docker:local-slim".into()
+        } else if self.image == "ghcr.io/reina0721/dsh-docker:2"
+            && self.image_variant == ImageVariant::Slim
+        {
+            "ghcr.io/reina0721/dsh-docker:2-slim".into()
         } else {
             self.image.clone()
         }
@@ -614,7 +618,7 @@ mod tests {
         let cfg = Config::from_map(dir.path(), BTreeMap::new()).unwrap();
         assert_eq!(cfg.dsh_port, 3080);
         assert_eq!(cfg.image, DEFAULT_IMAGE);
-        assert_eq!(cfg.image_mode, ImageMode::Auto);
+        assert_eq!(cfg.image_mode, ImageMode::Build);
         assert_eq!(
             cfg.auth_file(),
             dir.path().join(".runtime/auth/users.htpasswd")

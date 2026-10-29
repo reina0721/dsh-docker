@@ -178,6 +178,21 @@ fn resolve_dir(input: &Path) -> Result<PathBuf> {
         }
         cursor = parent;
     }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Ok(exe_canon) = fs::canonicalize(exe) {
+            let exe_canon = strip_verbatim(exe_canon);
+            if let Some(parent) = exe_canon.parent() {
+                if parent.join("compose.yaml").exists() {
+                    return Ok(parent.to_path_buf());
+                }
+                if let Some(grandparent) = parent.parent() {
+                    if grandparent.join("compose.yaml").exists() {
+                        return Ok(grandparent.to_path_buf());
+                    }
+                }
+            }
+        }
+    }
     Ok(input)
 }
 

@@ -58,6 +58,27 @@ pub fn init(config: &Config, options: InitOptions) -> Result<()> {
         write_file(&env_file, templates::ENV_EXAMPLE.as_bytes(), 0o600)?;
     }
 
+    let compose_build = config.project_dir.join("compose.build.yaml");
+    if options.force || options.refresh || !compose_build.exists() {
+        write_file(
+            &compose_build,
+            templates::COMPOSE_BUILD_YAML.as_bytes(),
+            0o644,
+        )?;
+    }
+
+    let dockerfile = config.project_dir.join("Dockerfile");
+    if options.force || options.refresh || !dockerfile.exists() {
+        write_file(&dockerfile, templates::DOCKERFILE.as_bytes(), 0o644)?;
+    }
+
+    let assets_dir = config.project_dir.join("assets");
+    fs::create_dir_all(&assets_dir)?;
+    let compat_js = assets_dir.join("dsh-http-compat.js");
+    if options.force || options.refresh || !compat_js.exists() {
+        write_file(&compat_js, templates::DSH_HTTP_COMPAT_JS.as_bytes(), 0o644)?;
+    }
+
     create_runtime_tree(config)?;
     migrate_legacy_auth(config)?;
 

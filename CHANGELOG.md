@@ -3,6 +3,21 @@
 All notable changes are documented here. The format follows Keep a Changelog and
 the project uses Semantic Versioning.
 
+## [2.0.1] - 2026-10-29
+
+### Added
+
+- Interactive installation wizard in `install.sh` and `install.ps1`: guides users through installation directory, Web port mapping, bind address, environment variant, mirror acceleration, and administrator password.
+- Self-contained project directory layout: all executables, Compose definitions, Dockerfiles, assets, and runtime state are installed into the user-specified project directory.
+- Bundled prebuilt static `dsh-entrypoint` inside Linux release archives: enables instant local Docker builds without pulling heavy Rust builder images.
+- Embedded runtime and build templates (`compose.build.yaml`, `Dockerfile`, `assets/dsh-http-compat.js`) in `dshctl`.
+
+### Changed
+
+- Disabled automatic multi-arch Docker image builds and GHCR push on tags/branches; releases are published as complete self-contained asset bundles.
+- Default image mode set to `build` with local image tag `dsh-docker:local`.
+- Updated all maintainer references and URLs to `reina0721/dsh-docker`.
+
 ## [2.0.0] - 2026-10-27
 
 ### Breaking
