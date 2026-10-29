@@ -37,7 +37,7 @@ Browser
 
 ### 一条命令（推荐）
 
-Linux / macOS：
+Linux / macOS 交互式安装：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash
@@ -61,6 +61,43 @@ irm https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.ps1 | ie
 - **开发环境变体**（`dev` 完整环境或 `slim` 极简版）
 - **网络加速策略**（官方默认源或中国大陆镜像加速）
 - **管理登录密码**（自定义输入或自动生成高强度安全随机密码）
+
+### 非交互式快捷安装（自动化 / 脚本部署）
+
+如果您需要在自动化脚本、云服务器初始化或 CI/CD 中一键完成配置与安装，可通过参数指定配置并跳过交互确认：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash -s -- \
+  --dir /workapps/test/dsh-docker \
+  --port 3080 \
+  --bind 0.0.0.0 \
+  --variant dev \
+  --admin qwq \
+  --password 123456 \
+  --weak-password \
+  --yes
+```
+
+> **国内服务器加速安装**：可将命令开头的 URL 替换为加速镜像地址：`curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash -s -- ...`，并在参数中添加 `--mirror cn`。
+
+#### 参数使用说明
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `--dir <PATH>` | `~/dsh-docker` | **项目安装根目录**。所有程序（`bin/dshctl`）、编排（`compose.yaml`）、配置（`.env`）与持久化运行时数据（`.runtime/`）均独立集中存放在该目录下，严格杜绝向系统外部散落文件。 |
+| `--port <PORT>` | `3080` | **宿主机 Web 访问端口映射**。DSH Web 服务对外暴露的端口。 |
+| `--bind <IP>` | `127.0.0.1` | **监听绑定地址**。设为 `127.0.0.1` 仅限本机回环访问（适合搭配外部 Nginx/Caddy 等前端反代终止 TLS）；设为 `0.0.0.0` 允许局域网或公网直接访问。 |
+| `--variant <dev\|slim>` | `dev` | **开发环境变体**。<br>• `dev`：完整开发环境，包含 Node、DSH、Go、Rust、pnpm、Python 等常用开发语言与工具。<br>• `slim`：轻量精简环境，仅包含 Node、DSH、Git、SSH 等基础依赖，后续可根据需要按需安装扩展。 |
+| `--admin <USER>` | `admin` | **管理员 Basic Auth 用户名**。登录 Web 界面所使用的账号名称。 |
+| `--password <PASS>` | 自动生成 | **管理员登录访问密码**。若未指定，脚本将自动生成 16 位高强度安全随机密码。 |
+| `--weak-password` | 强密码模式 | **允许弱密码模式**。快捷选项，允许设置 6 位或以上简短密码（如 `123456`），并在配置中自动设定 `AUTH_MIN_PASSWORD_LENGTH=6`，适合测试/内网环境（默认强密码模式要求至少 12 位密码）。 |
+| `--password-mode <strong\|weak>` | `strong` | **密码安全模式**。显式选择 `strong`（>=12 位）或 `weak`（>=6 位）。 |
+| `--min-password-length <N>` | 12 (强) / 6 (弱) | **自定义最小密码长度**。 |
+| `--yes`, `-y` | 交互向导 | **非交互模式确认**。对未指定的项自动采用默认值，跳过终端交互提示并立即开始下载、初始化与 Docker 本地部署启动。 |
+| `--mirror <global\|cn\|off>` | `global` | **网络加速策略**。`cn` 模式会自动启用国内 GitHub 代理、NPM 镜像源及 Go 代理加速。 |
+| `--no-deploy` | 立即部署 | **仅初始化**。仅下载解压并完成目录与用户初始化，不立即启动 Docker 容器构建与运行。 |
+| `--system-link` | 否 | **全局软链接**。可选在 `/usr/local/bin/dshctl` 创建系统全局软链接（默认不创建，保证项目完全独立自包含）。 |
+
 
 产物包内置了静态编译好的 `dsh-entrypoint` 容器网关，用户端通过 Docker 构建时**无需下载庞大的 Rust 编译镜像，也无需耗时编译**，1~2 分钟内即可极速完成构建与部署。
 

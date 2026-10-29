@@ -49,6 +49,39 @@ The installer verifies the package checksum and launches an interactive wizard g
 
 All installation artifacts, executables (`bin/dshctl`), Compose configurations, and runtime data are placed inside your chosen project directory. Pre-compiled static `dsh-entrypoint` binaries are bundled, allowing local Docker builds to finish in 1-2 minutes without downloading heavy Rust builder images.
 
+### Non-Interactive Quick Install (Automated / Headless)
+
+For unattended deployment, automated scripts, or CI/CD pipelines, specify options directly:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash -s -- \
+  --dir /workapps/test/dsh-docker \
+  --port 3080 \
+  --bind 0.0.0.0 \
+  --variant dev \
+  --admin qwq \
+  --password 123456 \
+  --weak-password \
+  --yes
+```
+
+#### Parameter Reference
+
+| Parameter | Default | Description |
+|---|---|---|
+| `--dir <PATH>` | `~/dsh-docker` | **Project installation root directory**. All binaries (`bin/dshctl`), Compose files (`compose.yaml`), configs (`.env`), and runtime data (`.runtime/`) are self-contained here without scattering files outside. |
+| `--port <PORT>` | `3080` | **Host Web port mapping**. The port where the DSH Web UI is exposed. |
+| `--bind <IP>` | `127.0.0.1` | **Listening bind IP address**. Use `127.0.0.1` for loopback (recommended behind Nginx/Caddy TLS proxy); use `0.0.0.0` for direct network access. |
+| `--variant <dev\|slim>` | `dev` | **Development environment variant**.<br>• `dev`: Full developer environment with Node, DSH, Go, Rust, pnpm, Python.<br>• `slim`: Lightweight minimal environment with Node, DSH, Git, and SSH. |
+| `--admin <USER>` | `admin` | **Administrator Basic Auth username**. |
+| `--password <PASS>` | Auto-generated | **Administrator password**. If omitted, a 16-character secure random password is generated. |
+| `--weak-password` | Strong mode | **Allow weak password mode**. Relaxes password length requirement to at least 6 characters (e.g. `123456`), ideal for test/internal environments (strong mode enforces >=12 chars). |
+| `--password-mode <strong\|weak>` | `strong` | **Password security mode**. Explicitly choose `strong` or `weak`. |
+| `--yes`, `-y` | Interactive | **Non-interactive unattended mode**. Applies defaults to unspecified options and starts deployment immediately. |
+| `--mirror <global\|cn\|off>` | `global` | **Network mirror acceleration policy**. |
+| `--no-deploy` | Deploy immediately | **Extract only**. Downloads and initializes files without running Docker build/up. |
+| `--system-link` | Disabled | **Global symlink**. Optionally links `/usr/local/bin/dshctl` (disabled by default to maintain project self-containment). |
+
 Open `http://127.0.0.1:3080/` and sign in with Basic Auth. The gateway captures DSH's
 one-time web token (redacted in logs) and injects it until DSH sets its auth cookie;
 you do not need to copy the `?token=...` URL manually.
