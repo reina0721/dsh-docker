@@ -7,7 +7,7 @@
 #   Options:
 #     .\install.ps1 [-Dir C:\path] [-Port 3080] [-Bind 127.0.0.1] [-Variant dev|slim]
 #                   [-Mirror global|cn|off] [-AdminUser admin] [-AdminPassword pass]
-#                   [-Version v2.0.1] [-NoDeploy] [-Yes]
+#                   [-Version v2.0.2] [-NoDeploy] [-Yes]
 #
 # Docker Desktop with WSL2 is required for deployment.
 
@@ -22,6 +22,9 @@ param(
     [string]$Mirror = 'global',
     [string]$AdminUser = 'admin',
     [string]$AdminPassword = '',
+    [ValidateSet('strong', 'weak', '')]
+    [string]$PasswordMode = '',
+    [switch]$WeakPassword,
     [string]$Version = 'latest',
     [switch]$NoDeploy,
     [switch]$Yes,
@@ -34,7 +37,7 @@ $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $Repo = 'reina0721/dsh-docker'
-$FallbackVersion = 'v2.0.1'
+$FallbackVersion = 'v2.0.2'
 $MirrorPrefixes = @('https://ghfast.top/', 'https://gh-proxy.com/')
 
 function Write-Info($Message) { Write-Host $Message }
@@ -231,6 +234,15 @@ try {
         $content = $content -replace '(?m)^DSH_IMAGE_MODE=.*', "DSH_IMAGE_MODE=build"
         $content = $content -replace '(?m)^DSH_IMAGE=.*', "DSH_IMAGE=dsh-docker:local"
         $content = $content -replace '(?m)^DSH_IMAGE_MIRROR=.*', "DSH_IMAGE_MIRROR=$Mirror"
+        $minLen = 12
+        if ($WeakPassword -or $PasswordMode -eq 'weak' -or ($AdminPassword -and $AdminPassword.Length -lt 12)) {
+            $minLen = 6
+        }
+        if ($content -match '(?m)^AUTH_MIN_PASSWORD_LENGTH=') {
+            $content = $content -replace '(?m)^AUTH_MIN_PASSWORD_LENGTH=.*', "AUTH_MIN_PASSWORD_LENGTH=$minLen"
+        } else {
+            $content += "`nAUTH_MIN_PASSWORD_LENGTH=$minLen`n"
+        }
         Set-Content -Path $envFile -Value $content -Encoding UTF8
     }
 
@@ -240,7 +252,11 @@ try {
 
     # Create admin user
     Write-Info "Configuring admin account '$AdminUser'..."
-    $AdminPassword | & $dshctlExe --dir $Dir user add $AdminUser --password-stdin
+    $userAddArgs = @('--dir', $Dir, 'user', 'add', $AdminUser, '--password-stdin')
+    if ($WeakPassword -or $PasswordMode -eq 'weak' -or ($AdminPassword -and $AdminPassword.Length -lt 12)) {
+        $userAddArgs += '--insecure-password'
+    }
+    $AdminPassword | & $dshctlExe @userAddArgs
 
     $docker = Get-Command docker -ErrorAction SilentlyContinue
     if (-not $docker) {

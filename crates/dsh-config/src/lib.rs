@@ -290,9 +290,9 @@ impl Config {
                 self.bcrypt_cost
             );
         }
-        if !(8..=MAX_PASSWORD_BYTES).contains(&self.min_password_len) {
+        if !(1..=MAX_PASSWORD_BYTES).contains(&self.min_password_len) {
             bail!(
-                "AUTH_MIN_PASSWORD_LENGTH must be between 8 and {MAX_PASSWORD_BYTES} (got {})",
+                "AUTH_MIN_PASSWORD_LENGTH must be between 1 and {MAX_PASSWORD_BYTES} (got {})",
                 self.min_password_len
             );
         }
@@ -643,6 +643,9 @@ mod tests {
         assert!(Config::from_map(dir.path(), map(&[("DSH_PORT", "0")])).is_err());
         assert!(Config::from_map(dir.path(), map(&[("DSH_PORT", "70000")])).is_err());
         assert!(Config::from_map(dir.path(), map(&[("AUTH_REALM", "a\nb")])).is_err());
+        assert!(Config::from_map(dir.path(), map(&[("AUTH_MIN_PASSWORD_LENGTH", "0")])).is_err());
+        assert!(Config::from_map(dir.path(), map(&[("AUTH_MIN_PASSWORD_LENGTH", "6")])).is_ok());
+        assert!(Config::from_map(dir.path(), map(&[("AUTH_MIN_PASSWORD_LENGTH", "73")])).is_err());
     }
 
     #[test]

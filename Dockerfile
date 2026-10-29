@@ -203,6 +203,11 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=5 \
 ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/dsh-entrypoint"]
 
 # =============================================================================
+# Slim target: alias runtime
+# =============================================================================
+FROM runtime AS slim
+
+# =============================================================================
 # Dev target: full toolchains for interactive coding
 # =============================================================================
 FROM runtime AS dev

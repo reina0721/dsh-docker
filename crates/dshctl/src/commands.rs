@@ -655,7 +655,19 @@ fn cmd_user_add(config: &Config, args: crate::UserAddArgs) -> Result<()> {
     } else {
         prompt_password_pair()?
     };
-    validate_password(config, &password)?;
+    if args.insecure_password {
+        if password.is_empty() {
+            bail!("password must not be empty");
+        }
+        if password.len() > dsh_auth::MAX_PASSWORD_BYTES {
+            bail!(
+                "password must be at most {} bytes",
+                dsh_auth::MAX_PASSWORD_BYTES
+            );
+        }
+    } else {
+        validate_password(config, &password)?;
+    }
     let cost = args.cost.unwrap_or(config.bcrypt_cost);
     let hash = hash_password(password.as_bytes(), cost)?;
     store.upsert(&args.name, hash);

@@ -206,6 +206,9 @@ pub struct UserAddArgs {
     /// Generate and print a random password.
     #[arg(long)]
     pub generate: bool,
+    /// Allow weak/short passwords below AUTH_MIN_PASSWORD_LENGTH.
+    #[arg(long)]
+    pub insecure_password: bool,
 }
 
 #[derive(Debug, Args)]

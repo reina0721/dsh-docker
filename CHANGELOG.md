@@ -3,6 +3,14 @@
 All notable changes are documented here. The format follows Keep a Changelog and
 the project uses Semantic Versioning.
 
+## [2.0.2] - 2026-10-29
+
+### Added
+
+- Added password strength mode configuration (`strong` vs `weak`) in `install.sh` and `install.ps1`.
+- Added `--insecure-password` support to `dshctl user add` and relaxed `AUTH_MIN_PASSWORD_LENGTH` lower bound from 8 to 1 for lightweight or test environments.
+- Added explicit `slim` stage in `Dockerfile` aliasing `runtime` so `--variant slim` works cleanly with `compose.build.yaml`.
+
 ## [2.0.1] - 2026-10-29
 
 ### Added

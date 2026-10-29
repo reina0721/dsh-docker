@@ -15,7 +15,7 @@
 set -Eeuo pipefail
 
 REPO="reina0721/dsh-docker"
-FALLBACK_VERSION="v2.0.1"
+FALLBACK_VERSION="v2.0.2"
 
 # Defaults
 TARGET_DIR="${DSHCTL_DIR:-$HOME/dsh-docker}"
@@ -32,6 +32,9 @@ ADMIN_USER="admin"
 ADMIN_USER_EXPLICIT=0
 ADMIN_PASS=""
 ADMIN_PASS_EXPLICIT=0
+PASSWORD_MODE="${DSH_PASSWORD_MODE:-}"
+PASSWORD_MODE_EXPLICIT=0
+MIN_PASSWORD_LEN=12
 VERSION="${DSHCTL_VERSION:-latest}"
 DO_DEPLOY=1
 EXPLICIT_YES=0
@@ -56,7 +59,11 @@ DSH Docker 安装向导 (Interactive & Self-Contained Installer)
   --variant dev|slim     开发环境变体 (默认: dev)
   --mirror global|cn|off 网络加速策略 (默认: global)
   --admin USER           管理员用户名 (默认: admin)
-  --password PASS        管理员访问密码 (至少12位，留空自动生成)
+  --password PASS        管理员访问密码 (留空自动生成)
+  --password-mode MOD    密码安全模式: strong|weak (默认: strong，密码>=12位; weak 模式允许简短密码>=6位)
+  --weak-password        允许弱密码模式 (快捷选项)
+  --strong-password      强制强密码模式 (快捷选项)
+  --min-password-length N 指定最小密码长度
   --version vX.Y.Z       指定发布版本 (默认: latest)
   --system-link          在 /usr/local/bin 创建全局 dshctl 软链接
   --no-deploy            仅下载解压与初始化，不立即启动 Docker 构建
@@ -81,6 +88,15 @@ while [ $# -gt 0 ]; do
         --mirror) MIRROR_POLICY="$2"; MIRROR_EXPLICIT=1; shift 2 ;;
         --admin) ADMIN_USER="$2"; ADMIN_USER_EXPLICIT=1; shift 2 ;;
         --password) ADMIN_PASS="$2"; ADMIN_PASS_EXPLICIT=1; shift 2 ;;
+        --password-mode|--password-strength)
+            case "$2" in
+                weak|strong) PASSWORD_MODE="$2"; PASSWORD_MODE_EXPLICIT=1; shift 2 ;;
+                *) die "invalid --password-mode: must be 'strong' or 'weak'" ;;
+            esac
+            ;;
+        --weak-password) PASSWORD_MODE="weak"; PASSWORD_MODE_EXPLICIT=1; shift ;;
+        --strong-password) PASSWORD_MODE="strong"; PASSWORD_MODE_EXPLICIT=1; shift ;;
+        --min-password-length) MIN_PASSWORD_LEN="$2"; shift 2 ;;
         --version) VERSION="$2"; shift 2 ;;
         --system-link) SYSTEM_LINK=1; SYSTEM_LINK_EXPLICIT=1; shift ;;
         --no-deploy) DO_DEPLOY=0; shift ;;
@@ -221,7 +237,7 @@ EOF
 
     # 1. Target Directory
     if [ "$TARGET_DIR_EXPLICIT" -eq 0 ]; then
-        printf '\n[1/6] 项目安装目录 (Installation Directory)\n'
+        printf '\n[1/7] 项目安装目录 (Installation Directory)\n'
         printf '      将在此目录下存放 dshctl、Docker 编排文件、配置与工作区数据。\n'
         prompt_input "请输入安装目录 [默认: ${TARGET_DIR}]: " "${TARGET_DIR}" TARGET_DIR
         case "$TARGET_DIR" in
@@ -231,7 +247,7 @@ EOF
 
     # 2. Port
     if [ "$PORT_EXPLICIT" -eq 0 ]; then
-        printf '\n[2/6] 外部访问端口 (Port Mapping)\n'
+        printf '\n[2/7] 外部访问端口 (Port Mapping)\n'
         printf '      DSH Web 服务的访问端口。\n'
         while true; do
             prompt_input "请输入访问端口 [默认: ${PORT}]: " "${PORT}" PORT
@@ -248,7 +264,7 @@ EOF
 
     # 3. Bind address
     if [ "$BIND_EXPLICIT" -eq 0 ]; then
-        printf '\n[3/6] 监听绑定地址 (Bind Address)\n'
+        printf '\n[3/7] 监听绑定地址 (Bind Address)\n'
         printf '      1) 127.0.0.1 (推荐: 仅本机访问，适合搭配 Nginx/Caddy 等反向代理) [默认]\n'
         printf '      2) 0.0.0.0   (局域网或公网直接访问)\n'
         prompt_input "请选择监听地址 [1/2, 默认: 1]: " "1" BIND_CHOICE
@@ -260,7 +276,7 @@ EOF
 
     # 4. Variant
     if [ "$VARIANT_EXPLICIT" -eq 0 ]; then
-        printf '\n[4/6] 开发环境变体 (Environment Variant)\n'
+        printf '\n[4/7] 开发环境变体 (Environment Variant)\n'
         printf '      1) dev  (完整开发环境: 包含 Node, DSH, Go, Rust, pnpm, Python) [默认]\n'
         printf '      2) slim (轻量精简环境: 仅包含 Node, DSH, Git, SSH 基础依赖)\n'
         prompt_input "请选择变体 [1/2, 默认: 1]: " "1" VARIANT_CHOICE
@@ -272,7 +288,7 @@ EOF
 
     # 5. Mirror
     if [ "$MIRROR_EXPLICIT" -eq 0 ]; then
-        printf '\n[5/6] 网络加速策略 (Network Acceleration)\n'
+        printf '\n[5/7] 网络加速策略 (Network Acceleration)\n'
         printf '      1) global (官方默认源: GitHub / Docker Hub / NPM 官方源) [默认]\n'
         printf '      2) cn     (中国大陆加速: 使用国内 GitHub 代理、NPM 镜像及 Docker 镜像源)\n'
         prompt_input "请选择加速策略 [1/2, 默认: 1]: " "1" MIRROR_CHOICE
@@ -282,19 +298,37 @@ EOF
         esac
     fi
 
-    # 6. Admin Account
+    # 6. Password Strength Mode
+    if [ "$PASSWORD_MODE_EXPLICIT" -eq 0 ]; then
+        printf '\n[6/7] 密码安全强度模式 (Password Security Mode)\n'
+        printf '      1) strong (强密码模式: 密码至少12位，安全性高) [默认]\n'
+        printf '      2) weak   (弱密码模式: 允许简短密码，至少6位，如 123456，适合测试环境)\n'
+        prompt_input "请选择密码强度模式 [1/2, 默认: 1]: " "1" PASS_MODE_CHOICE
+        case "$PASS_MODE_CHOICE" in
+            2|weak)
+                PASSWORD_MODE="weak"
+                MIN_PASSWORD_LEN=6
+                ;;
+            *)
+                PASSWORD_MODE="strong"
+                MIN_PASSWORD_LEN=12
+                ;;
+        esac
+    fi
+
+    # 7. Admin Account
     if [ "$ADMIN_USER_EXPLICIT" -eq 0 ]; then
-        printf '\n[6/6] 管理员账号设置 (Basic Auth)\n'
+        printf '\n[7/7] 管理员账号设置 (Basic Auth)\n'
         prompt_input "请输入管理员用户名 [默认: admin]: " "admin" ADMIN_USER
     fi
     if [ "$ADMIN_PASS_EXPLICIT" -eq 0 ]; then
-        prompt_secret "请输入管理员访问密码 (至少12位，直接回车自动生成随机安全密码): " ADMIN_PASS
+        prompt_secret "请输入管理员访问密码 (至少${MIN_PASSWORD_LEN}位，直接回车自动生成随机安全密码): " ADMIN_PASS
         if [ -z "$ADMIN_PASS" ]; then
             ADMIN_PASS="$(generate_random_password)"
             PASSWORD_WAS_GENERATED=1
         else
-            while [ "${#ADMIN_PASS}" -lt 12 ]; do
-                warn "密码长度至少需要 12 位（当前为 ${#ADMIN_PASS} 位）"
+            while [ "${#ADMIN_PASS}" -lt "$MIN_PASSWORD_LEN" ]; do
+                warn "密码长度至少需要 ${MIN_PASSWORD_LEN} 位（当前为 ${#ADMIN_PASS} 位）"
                 prompt_secret "请重新输入密码 (直接回车自动生成): " ADMIN_PASS
                 if [ -z "$ADMIN_PASS" ]; then
                     ADMIN_PASS="$(generate_random_password)"
@@ -314,6 +348,7 @@ EOF
     printf '  环境变体 : %s\n' "$VARIANT"
     printf '  加速策略 : %s\n' "$MIRROR_POLICY"
     printf '  管理账号 : %s\n' "$ADMIN_USER"
+    printf '  密码模式 : %s (最小长度: %s位)\n' "${PASSWORD_MODE:-strong}" "$MIN_PASSWORD_LEN"
     if [ "${PASSWORD_WAS_GENERATED:-0}" -eq 1 ]; then
         printf '  管理密码 : %s (自动生成)\n' "$ADMIN_PASS"
     else
@@ -326,10 +361,29 @@ EOF
     esac
 fi
 
+# Determine password mode and validation for non-interactive / explicit values
+if [ -z "$PASSWORD_MODE" ]; then
+    if [ -n "$ADMIN_PASS" ] && [ "${#ADMIN_PASS}" -lt 12 ]; then
+        PASSWORD_MODE="weak"
+        MIN_PASSWORD_LEN=6
+    else
+        PASSWORD_MODE="strong"
+        MIN_PASSWORD_LEN=12
+    fi
+fi
+
+if [ "$PASSWORD_MODE" = "weak" ] && [ "$MIN_PASSWORD_LEN" -gt 6 ]; then
+    MIN_PASSWORD_LEN=6
+fi
+
 # Ensure password exists for non-interactive
 if [ -z "$ADMIN_PASS" ]; then
     ADMIN_PASS="$(generate_random_password)"
     PASSWORD_WAS_GENERATED=1
+fi
+
+if [ "${#ADMIN_PASS}" -lt "$MIN_PASSWORD_LEN" ]; then
+    die "密码长度至少需要 ${MIN_PASSWORD_LEN} 位（当前为 ${#ADMIN_PASS} 位），如需弱密码请使用 --weak-password 或 --password-mode weak"
 fi
 
 # ==============================================================================
@@ -468,6 +522,7 @@ replace_env "DSH_IMAGE_VARIANT" "$VARIANT" "$ENV_FILE"
 replace_env "DSH_IMAGE_MODE" "build" "$ENV_FILE"
 replace_env "DSH_IMAGE" "dsh-docker:local" "$ENV_FILE"
 replace_env "DSH_IMAGE_MIRROR" "$MIRROR_POLICY" "$ENV_FILE"
+replace_env "AUTH_MIN_PASSWORD_LENGTH" "$MIN_PASSWORD_LEN" "$ENV_FILE"
 
 if [ "$MIRROR_POLICY" = "cn" ]; then
     replace_env "BUILD_MIRROR" "cn" "$ENV_FILE"
@@ -482,7 +537,11 @@ log "Initializing runtime directories in ${TARGET_DIR}..."
 "$DSHCTL" --dir "$TARGET_DIR" init
 
 log "Configuring admin account '${ADMIN_USER}'..."
-printf '%s\n' "$ADMIN_PASS" | "$DSHCTL" --dir "$TARGET_DIR" user add "$ADMIN_USER" --password-stdin >/dev/null
+USER_ADD_FLAGS=("--password-stdin")
+if [ "$PASSWORD_MODE" = "weak" ] || [ "$MIN_PASSWORD_LEN" -lt 12 ]; then
+    USER_ADD_FLAGS+=("--insecure-password")
+fi
+printf '%s\n' "$ADMIN_PASS" | "$DSHCTL" --dir "$TARGET_DIR" user add "$ADMIN_USER" "${USER_ADD_FLAGS[@]}" >/dev/null
 
 # Optional completions
 if [ "$INSTALL_COMPLETIONS" -eq 1 ]; then
