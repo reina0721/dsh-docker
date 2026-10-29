@@ -352,16 +352,13 @@ fn status_text(config: &Config, docker: &Docker, verbose: bool) -> Result<()> {
 }
 
 pub fn detect_account_status(config: &Config) -> String {
-    let creds_file = config.home_dir().join("dsh").join(".credentials.yaml");
-    if let Ok(content) = fs::read_to_string(&creds_file) {
-        if content.contains("account:platform") {
-            return "logged in (DeepSeek official)".to_string();
-        }
-    }
-    let ephem = config.home_dir().join(".credentials.yaml");
-    if let Ok(content) = fs::read_to_string(&ephem) {
-        if content.contains("account:platform") {
-            return "logged in (DeepSeek official)".to_string();
+    let primary = config.dsh_home().join(".credentials.yaml");
+    let fallback = config.home_dir().join("dsh").join(".credentials.yaml");
+    for path in [&primary, &fallback] {
+        if let Ok(content) = fs::read_to_string(path) {
+            if content.contains("account:platform") {
+                return "logged in (DeepSeek official)".to_string();
+            }
         }
     }
     format!(
@@ -371,11 +368,15 @@ pub fn detect_account_status(config: &Config) -> String {
 }
 
 fn cmd_account(config: &Config, _verbose: bool, args: AccountArgs) -> Result<()> {
-    let creds_file = config.home_dir().join("dsh").join(".credentials.yaml");
+    let creds_file = if config.dsh_home().join(".credentials.yaml").exists() {
+        config.dsh_home().join(".credentials.yaml")
+    } else {
+        config.home_dir().join("dsh").join(".credentials.yaml")
+    };
     let is_logged_in = fs::read_to_string(&creds_file)
         .map(|content| content.contains("account:platform"))
         .unwrap_or(false)
-        || fs::read_to_string(config.home_dir().join(".credentials.yaml"))
+        || fs::read_to_string(config.home_dir().join("dsh").join(".credentials.yaml"))
             .map(|content| content.contains("account:platform"))
             .unwrap_or(false);
 
@@ -400,7 +401,7 @@ fn cmd_account(config: &Config, _verbose: bool, args: AccountArgs) -> Result<()>
             println!("\nCredentials location:");
             println!("  Host path      : {}", creds_file.display());
             println!("  Container path : /home/node/.dsh/.credentials.yaml");
-            println!("  Runtime persist: {}", config.home_dir().display());
+            println!("  DSH home dir   : {}", config.dsh_home().display());
             println!();
             Ok(())
         }

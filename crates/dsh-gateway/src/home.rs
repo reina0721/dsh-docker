@@ -60,7 +60,6 @@ mod imp {
             (".config", "config"),
             (".local/share", "local/share"),
             (".local/state", "local/state"),
-            (".dsh", "dsh"),
         ] {
             let target = layout.persist.join(target);
             ensure_dir_link(&layout.home.join(link), &target)?;
