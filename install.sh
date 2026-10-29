@@ -15,7 +15,7 @@
 set -Eeuo pipefail
 
 REPO="reina0721/dsh-docker"
-FALLBACK_VERSION="v2.0.3"
+FALLBACK_VERSION="v2.0.4"
 
 # Defaults
 TARGET_DIR="${DSHCTL_DIR:-$HOME/dsh-docker}"
@@ -35,6 +35,8 @@ ADMIN_PASS_EXPLICIT=0
 PASSWORD_MODE="${DSH_PASSWORD_MODE:-}"
 PASSWORD_MODE_EXPLICIT=0
 MIN_PASSWORD_LEN=12
+DSH_VERSION=""
+DSH_VERSION_EXPLICIT=0
 VERSION="${DSHCTL_VERSION:-latest}"
 DO_DEPLOY=1
 EXPLICIT_YES=0
@@ -64,6 +66,7 @@ DSH Docker 安装向导 (Interactive & Self-Contained Installer)
   --weak-password        允许弱密码模式 (快捷选项)
   --strong-password      强制强密码模式 (快捷选项)
   --min-password-length N 指定最小密码长度
+  --dsh-version VER      指定 DSH (@deepseek-ai/dsh) 版本 (默认: 自动检测 npm 最新版)
   --version vX.Y.Z       指定发布版本 (默认: latest)
   --system-link          在 /usr/local/bin 创建全局 dshctl 软链接
   --no-deploy            仅下载解压与初始化，不立即启动 Docker 构建
@@ -97,6 +100,7 @@ while [ $# -gt 0 ]; do
         --weak-password) PASSWORD_MODE="weak"; PASSWORD_MODE_EXPLICIT=1; shift ;;
         --strong-password) PASSWORD_MODE="strong"; PASSWORD_MODE_EXPLICIT=1; shift ;;
         --min-password-length) MIN_PASSWORD_LEN="$2"; shift 2 ;;
+        --dsh-version) DSH_VERSION="$2"; DSH_VERSION_EXPLICIT=1; shift 2 ;;
         --version) VERSION="$2"; shift 2 ;;
         --system-link) SYSTEM_LINK=1; SYSTEM_LINK_EXPLICIT=1; shift ;;
         --no-deploy) DO_DEPLOY=0; shift ;;
@@ -525,6 +529,29 @@ replace_env "DSH_IMAGE" "dsh-docker:local" "$ENV_FILE"
 replace_env "DSH_IMAGE_MIRROR" "$MIRROR_POLICY" "$ENV_FILE"
 replace_env "AUTH_MIN_PASSWORD_LENGTH" "$MIN_PASSWORD_LEN" "$ENV_FILE"
 
+# Resolve latest upstream DSH version to prevent stale Docker build cache
+resolve_latest_dsh_version() {
+    local mirror="$1"
+    local ver=""
+    if [ "$mirror" = "cn" ]; then
+        ver="$(curl -fsSL --connect-timeout 5 https://registry.npmmirror.com/@deepseek-ai/dsh/latest 2>/dev/null | grep -o '"version":"[^"]*"' | head -n 1 | cut -d'"' -f4 || true)"
+    fi
+    if [ -z "$ver" ]; then
+        ver="$(curl -fsSL --connect-timeout 5 https://registry.npmjs.org/@deepseek-ai%2Fdsh/latest 2>/dev/null | grep -o '"version":"[^"]*"' | head -n 1 | cut -d'"' -f4 || true)"
+    fi
+    if [ -z "$ver" ]; then
+        ver="0.2.1-rc.5"
+    fi
+    printf '%s\n' "$ver"
+}
+
+if [ "$DSH_VERSION_EXPLICIT" -eq 0 ] || [ -z "$DSH_VERSION" ] || [ "$DSH_VERSION" = "latest" ]; then
+    log "正在检测 @deepseek-ai/dsh 最新版本..."
+    DSH_VERSION="$(resolve_latest_dsh_version "$MIRROR_POLICY")"
+    log "已锁定 DSH 版本: ${DSH_VERSION}"
+fi
+replace_env "DSH_VERSION" "$DSH_VERSION" "$ENV_FILE"
+
 if [ "$MIRROR_POLICY" = "cn" ]; then
     replace_env "BUILD_MIRROR" "cn" "$ENV_FILE"
     replace_env "NPM_REGISTRY" "https://registry.npmmirror.com" "$ENV_FILE"
@@ -625,6 +652,7 @@ cat <<EOF
 常用管理命令 (在项目目录下执行):
   ./dshctl status        - 查看运行状态与容器健康
   ./dshctl logs          - 实时跟踪日志
+  ./dshctl upgrade       - 检查并一键在线升级 DSH 到最新版本
   ./dshctl stop / up     - 停止 / 启动服务
   ./dshctl restart       - 重启服务
   ./dshctl user add      - 添加新的登录用户

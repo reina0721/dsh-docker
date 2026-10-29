@@ -148,6 +148,41 @@ impl Docker {
         self.compose_status(&args, false)
     }
 
+    pub fn exec_as_user(&self, user: &str, command: &[String]) -> Result<ExitStatus> {
+        if command.is_empty() {
+            bail!("exec requires a command");
+        }
+        let mut args = vec![os("exec"), os("-T"), os("-u"), os(user), os("dsh")];
+        args.extend(command.iter().map(os));
+        let compose = self.compose_args(&args, false)?;
+        self.run_status("docker", &compose, &self.compose_env(), true)
+    }
+
+    pub fn exec_capture(&self, command: &[String]) -> Result<String> {
+        if command.is_empty() {
+            bail!("exec requires a command");
+        }
+        let mut args = vec![os("exec"), os("-T"), os("dsh")];
+        args.extend(command.iter().map(os));
+        let output = self.compose_capture(&args, false)?;
+        if !output.status.success() {
+            bail!("docker compose exec exited with {}", output.status);
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    pub fn container_running(&self) -> Result<bool> {
+        let services = self.ps()?;
+        for service in services {
+            if let Some(state) = service.get("State").and_then(|v| v.as_str()) {
+                if state.eq_ignore_ascii_case("running") {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
     pub fn ps(&self) -> Result<Vec<Value>> {
         let output = self
             .compose_capture(&[os("ps"), os("--format"), os("json")], false)

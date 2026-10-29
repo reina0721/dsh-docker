@@ -37,7 +37,7 @@ $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $Repo = 'reina0721/dsh-docker'
-$FallbackVersion = 'v2.0.3'
+$FallbackVersion = 'v2.0.4'
 $MirrorPrefixes = @('https://ghfast.top/', 'https://gh-proxy.com/')
 
 function Write-Info($Message) { Write-Host $Message }
@@ -234,6 +234,18 @@ try {
         $content = $content -replace '(?m)^DSH_IMAGE_MODE=.*', "DSH_IMAGE_MODE=build"
         $content = $content -replace '(?m)^DSH_IMAGE=.*', "DSH_IMAGE=dsh-docker:local"
         $content = $content -replace '(?m)^DSH_IMAGE_MIRROR=.*', "DSH_IMAGE_MIRROR=$Mirror"
+        $resolvedDshVer = "0.2.1-rc.5"
+        try {
+            $regUrl = if ($Mirror -eq 'cn') { "https://registry.npmmirror.com/@deepseek-ai/dsh/latest" } else { "https://registry.npmjs.org/@deepseek-ai%2Fdsh/latest" }
+            $res = Invoke-RestMethod -Uri $regUrl -TimeoutSec 5 -ErrorAction SilentlyContinue
+            if ($res.version) { $resolvedDshVer = $res.version }
+        } catch {}
+        Write-Info "Locked DSH version: $resolvedDshVer"
+        if ($content -match '(?m)^DSH_VERSION=') {
+            $content = $content -replace '(?m)^DSH_VERSION=.*', "DSH_VERSION=$resolvedDshVer"
+        } else {
+            $content += "`nDSH_VERSION=$resolvedDshVer`n"
+        }
         $minLen = 12
         if ($WeakPassword -or $PasswordMode -eq 'weak' -or ($AdminPassword -and $AdminPassword.Length -lt 12)) {
             $minLen = 6

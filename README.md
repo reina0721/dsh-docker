@@ -93,6 +93,7 @@ curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.s
 | `--weak-password` | 强密码模式 | **允许弱密码模式**。快捷选项，允许设置 6 位或以上简短密码（如 `123456`），并在配置中自动设定 `AUTH_MIN_PASSWORD_LENGTH=6`，适合测试/内网环境（默认强密码模式要求至少 12 位密码）。 |
 | `--password-mode <strong\|weak>` | `strong` | **密码安全模式**。显式选择 `strong`（>=12 位）或 `weak`（>=6 位）。 |
 | `--min-password-length <N>` | 12 (强) / 6 (弱) | **自定义最小密码长度**。 |
+| `--dsh-version <VER>` | npm 最新版 | **指定 DSH 版本**。安装时默认自动查询 npm 官方最新发布版本并锁定，避免命中本地 Docker 缓存导致安装旧版。 |
 | `--yes`, `-y` | 交互向导 | **非交互模式确认**。对未指定的项自动采用默认值，跳过终端交互提示并立即开始下载、初始化与 Docker 本地部署启动。 |
 | `--mirror <global\|cn\|off>` | `global` | **网络加速策略**。`cn` 模式会自动启用国内 GitHub 代理、NPM 镜像源及 Go 代理加速。 |
 | `--no-deploy` | 立即部署 | **仅初始化**。仅下载解压并完成目录与用户初始化，不立即启动 Docker 容器构建与运行。 |
@@ -271,8 +272,17 @@ Core 默认只监听 `127.0.0.1:3080`，TLS 由你现有的 Nginx/Caddy/1Panel/T
 ## 更新与迁移
 
 ```bash
+# 一键升级 DSH (@deepseek-ai/dsh) 到官方最新版本（自动检查 npm 仓库发布）
+./dshctl upgrade
+./dshctl upgrade --check              # 仅检查是否有新版本
+./dshctl upgrade --version 0.2.1-rc.5 # 升级到指定版本
+./dshctl upgrade --rebuild            # 重新构建镜像层并应用升级
+
 # 更新镜像并重建（不删除 .runtime）
-dshctl update --backup
+./dshctl update --backup
+
+# 更新 dshctl CLI 自身到 GitHub 最新 Release
+./dshctl self-update
 
 # v1 数据迁移（users.caddy -> users.htpasswd，提示 :latest -> :2）
 dshctl migrate --dry-run

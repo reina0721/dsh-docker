@@ -59,6 +59,8 @@ pub enum Commands {
     Exec(ExecArgs),
     /// Pull the latest image and recreate the container.
     Update(UpdateArgs),
+    /// Upgrade DSH (@deepseek-ai/dsh) to the latest upstream release.
+    Upgrade(UpgradeArgs),
     /// Replace this dshctl binary from GitHub Releases.
     SelfUpdate(SelfUpdateArgs),
     /// Rebuild the image locally and recreate the container.
@@ -163,6 +165,22 @@ pub struct SelfUpdateArgs {
     /// Only check for a newer release.
     #[arg(long)]
     pub check: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct UpgradeArgs {
+    /// Specific DSH version to install (defaults to latest upstream on npm).
+    #[arg(long)]
+    pub version: Option<String>,
+    /// Only check for newer upstream DSH version without upgrading.
+    #[arg(long)]
+    pub check: bool,
+    /// Rebuild the image instead of performing an in-container live upgrade.
+    #[arg(long)]
+    pub rebuild: bool,
+    /// Do not prompt for confirmation.
+    #[arg(long, short)]
+    pub yes: bool,
 }
 
 #[derive(Debug, Args)]

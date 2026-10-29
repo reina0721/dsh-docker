@@ -22,7 +22,7 @@ use zeroize::Zeroizing;
 use crate::{
     Cli, Commands, CompletionArgs, ConfigCommands, DeployArgs, DoctorArgs, GitCommands,
     ImageCommands, InitArgs, LogsArgs, MigrateArgs, RebuildArgs, RestoreArgs, SelfUpdateArgs,
-    SshCommands, StatusArgs, UpdateArgs, UserCommands, backup,
+    SshCommands, StatusArgs, UpdateArgs, UpgradeArgs, UserCommands, backup,
     docker::{Docker, RUNTIME_LABEL, RUNTIME_LABEL_VALUE},
     git::GitConfig,
     runtime,
@@ -71,6 +71,7 @@ pub fn run(cli: Cli) -> Result<()> {
             docker.exec(&args.command)
         }
         Commands::Update(args) => cmd_update(&config, cli.verbose, args),
+        Commands::Upgrade(args) => cmd_upgrade(&config, cli.verbose, args),
         Commands::SelfUpdate(args) => cmd_self_update(args),
         Commands::Rebuild(args) => cmd_rebuild(&config, cli.verbose, args),
         Commands::User(args) => match args.command {
@@ -264,12 +265,14 @@ fn cmd_status(config: &Config, verbose: bool, args: StatusArgs) -> Result<()> {
             .unwrap_or(0);
         let services = docker.ps().unwrap_or_default();
         let image = config.effective_image();
+        let dsh_version = detect_current_dsh_version(&docker, config);
         let payload = serde_json::json!({
             "cli_version": env!("CARGO_PKG_VERSION"),
             "project_dir": config.project_dir,
             "runtime_dir": config.runtime_dir,
             "image": image,
             "variant": config.image_variant.to_string(),
+            "dsh_version": dsh_version.as_deref().unwrap_or(&config.dsh_version),
             "image_label": docker.image_label(&image, RUNTIME_LABEL).ok().flatten(),
             "services": services,
             "http": {
@@ -329,6 +332,9 @@ fn status_text(config: &Config, docker: &Docker, verbose: bool) -> Result<()> {
     println!("Auth users   : {users}");
     println!("Image        : {image}");
     println!("Variant      : {}", config.image_variant);
+    let dsh_ver = detect_current_dsh_version(docker, config)
+        .unwrap_or_else(|| config.dsh_version.clone());
+    println!("DSH version  : {dsh_ver}");
     println!("HTTP compat  : {}", config.compat);
     if verbose {
         println!("Project      : {}", config.project_dir.display());
@@ -601,6 +607,187 @@ fn cmd_update(config: &Config, verbose: bool, args: UpdateArgs) -> Result<()> {
     docker.up()?;
     wait_health(&config)?;
     status_text(&config, &docker, true)
+}
+
+pub fn set_env_key(path: &Path, key: &str, val: &str) -> Result<()> {
+    let content = if path.is_file() {
+        fs::read_to_string(path).context("failed to read .env")?
+    } else {
+        String::new()
+    };
+    let mut replaced = false;
+    let mut lines: Vec<String> = content
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with(&format!("{key}="))
+                || (trimmed.starts_with('#')
+                    && trimmed
+                        .trim_start_matches('#')
+                        .trim_start()
+                        .starts_with(&format!("{key}=")))
+            {
+                replaced = true;
+                format!("{key}={val}")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+
+    if !replaced {
+        lines.push(format!("{key}={val}"));
+    }
+
+    let mut output = lines.join("\n");
+    output.push('\n');
+    fs::write(path, output).context("failed to write .env")?;
+    Ok(())
+}
+
+fn fetch_latest_dsh_version(config: &Config) -> Result<String> {
+    let mut urls = Vec::new();
+    if config.build_mirror == "cn" || config.image_mirror == dsh_config::MirrorMode::Cn {
+        urls.push("https://registry.npmmirror.com/@deepseek-ai/dsh/latest");
+    }
+    urls.push("https://registry.npmjs.org/@deepseek-ai%2Fdsh/latest");
+
+    let agent = http_agent();
+    for url in urls {
+        match agent.get(url).call() {
+            Ok(response) => {
+                let json: serde_json::Value = response
+                    .into_json()
+                    .with_context(|| format!("failed to parse JSON from {url}"))?;
+                if let Some(version) = json.get("version").and_then(|v| v.as_str()) {
+                    return Ok(version.to_string());
+                }
+            }
+            Err(e) => {
+                if config.build_mirror == "cn" || config.image_mirror == dsh_config::MirrorMode::Cn
+                {
+                    continue;
+                }
+                return Err(anyhow::anyhow!(
+                    "failed to query npm registry at {url}: {e}"
+                ));
+            }
+        }
+    }
+    bail!("could not determine latest @deepseek-ai/dsh version from npm registry");
+}
+
+fn detect_current_dsh_version(docker: &Docker, config: &Config) -> Option<String> {
+    if let Ok(ver) = docker.exec_capture(&["dsh".to_string(), "--version".to_string()]) {
+        let trimmed = ver.trim();
+        if !trimmed.is_empty() && !trimmed.contains("error") && !trimmed.contains("not found") {
+            return Some(trimmed.to_string());
+        }
+    }
+    if !config.dsh_version.is_empty() && config.dsh_version != "latest" {
+        return Some(config.dsh_version.clone());
+    }
+    None
+}
+
+fn cmd_upgrade(config: &Config, verbose: bool, args: UpgradeArgs) -> Result<()> {
+    let docker = docker(config, verbose);
+    docker.require()?;
+
+    println!("Checking upstream DSH releases on npm registry...");
+    let target = match args.version {
+        Some(v) => v,
+        None => fetch_latest_dsh_version(config)?,
+    };
+
+    let current = detect_current_dsh_version(&docker, config);
+
+    println!(
+        "Current DSH version : {}",
+        current.as_deref().unwrap_or("unknown")
+    );
+    println!("Upstream DSH version: {target}");
+
+    if args.check {
+        if let Some(curr) = &current {
+            if curr == &target {
+                println!("Status              : Up to date");
+            } else {
+                println!("Status              : Upgrade available (run `dshctl upgrade` to apply)");
+            }
+        }
+        return Ok(());
+    }
+
+    if let Some(curr) = &current {
+        if curr == &target && !args.rebuild {
+            println!(
+                "DSH is already up to date ({curr}). Use --rebuild if you want to rebuild the container image."
+            );
+            return Ok(());
+        }
+    }
+
+    if !args.yes && io::stdin().is_terminal() {
+        print!("Upgrade DSH to {target}? [Y/n]: ");
+        io::stdout().flush()?;
+        let mut response = String::new();
+        io::stdin().read_line(&mut response)?;
+        let trimmed = response.trim();
+        if !trimmed.is_empty()
+            && !trimmed.eq_ignore_ascii_case("y")
+            && !trimmed.eq_ignore_ascii_case("yes")
+        {
+            println!("Aborted.");
+            return Ok(());
+        }
+    }
+
+    set_env_key(&config.project_dir.join(".env"), "DSH_VERSION", &target)?;
+    let mut updated_config = Config::load(&config.project_dir)?;
+    updated_config.dsh_version = target.clone();
+
+    let is_running = docker.container_running()?;
+
+    if args.rebuild || !is_running {
+        println!("Rebuilding DSH image with DSH_VERSION={target}...");
+        docker.compose_config_check()?;
+        docker.build_image()?;
+        if is_running {
+            docker.up()?;
+            wait_health(&updated_config)?;
+        }
+    } else {
+        println!("Performing live in-container upgrade to @deepseek-ai/dsh@{target}...");
+        let mut install_cmd = vec![
+            "npm".to_string(),
+            "install".to_string(),
+            "-g".to_string(),
+            "--prefix".to_string(),
+            "/opt/dsh".to_string(),
+        ];
+        if config.build_mirror == "cn" || config.image_mirror == dsh_config::MirrorMode::Cn {
+            install_cmd.push("--registry=https://registry.npmmirror.com".to_string());
+        }
+        install_cmd.push(format!("@deepseek-ai/dsh@{target}"));
+
+        let status = docker.exec_as_user("node", &install_cmd)?;
+        if !status.success() {
+            bail!("npm install inside container failed with {status}");
+        }
+
+        println!("Restarting container to apply changes...");
+        docker.restart()?;
+        wait_health(&updated_config)?;
+    }
+
+    if let Some(final_ver) = detect_current_dsh_version(&docker, &updated_config) {
+        println!("Successfully upgraded DSH to {final_ver}!");
+    } else {
+        println!("Upgraded DSH to {target}.");
+    }
+
+    Ok(())
 }
 
 fn cmd_rebuild(config: &Config, verbose: bool, args: RebuildArgs) -> Result<()> {
@@ -1394,5 +1581,30 @@ impl Serialize for Level {
         S: serde::Serializer,
     {
         serializer.serialize_str(self.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_set_env_key_updates_existing_and_commented() {
+        let dir = tempfile::tempdir().unwrap();
+        let env_file = dir.path().join(".env");
+        fs::write(
+            &env_file,
+            "PORT=3080\n# DSH_VERSION=0.2.0\nOTHER=test\n",
+        )
+        .unwrap();
+
+        set_env_key(&env_file, "DSH_VERSION", "0.2.1-rc.5").unwrap();
+        let content = fs::read_to_string(&env_file).unwrap();
+        assert!(content.contains("DSH_VERSION=0.2.1-rc.5"));
+        assert!(!content.contains("# DSH_VERSION=0.2.0"));
+
+        set_env_key(&env_file, "NEW_KEY", "value").unwrap();
+        let content2 = fs::read_to_string(&env_file).unwrap();
+        assert!(content2.contains("NEW_KEY=value"));
     }
 }

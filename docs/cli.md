@@ -110,6 +110,15 @@ clean `git pull --ff-only` first; `--backup` snapshots before updating.
 `rebuild` forces a local Docker build (requires `Dockerfile` and the Cargo
 workspace) and recreates the service.
 
+### `upgrade [--version <VER>] [--check] [--rebuild] [-y]`
+
+Upgrades the DeepSeek Harness package (`@deepseek-ai/dsh`) to the latest upstream version:
+- Checks npm registry (`registry.npmjs.org` or `registry.npmmirror.com` if using China mirror).
+- Updates `DSH_VERSION` in `.env`.
+- If the container is currently running, applies the package update live inside the container and restarts the service without rebuilding the entire image.
+- With `--rebuild`, forces a rebuild of the local Docker image with the new `DSH_VERSION`.
+- `--check` checks for newer versions without applying changes.
+
 ### `image`
 
 - `image check [--network]` checks the manifest, GHCR endpoint, and layer CDN DNS.
