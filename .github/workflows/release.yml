@@ -137,7 +137,7 @@ jobs:
             --output-signature SHA256SUMS.sig \
             --output-certificate SHA256SUMS.pem
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/dshctl-*
       - name: Create GitHub Release
