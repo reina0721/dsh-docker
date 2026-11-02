@@ -109,19 +109,43 @@ impl Gateway {
             return text_response(StatusCode::BAD_REQUEST, "bad request\n", HeaderMap::new());
         }
 
-        // 1. Static web assets (/assets/*)
-        if path.starts_with("/assets/") && method == Method::GET {
-            return serve_asset(&path);
+        // 1. Static web assets (/assets/* or /login/assets/*)
+        let asset_subpath = if let Some(stripped) = path.strip_prefix("/login/assets/") {
+            Some(format!("assets/{stripped}"))
+        } else if let Some(stripped) = path.strip_prefix("/assets/") {
+            Some(format!("assets/{stripped}"))
+        } else {
+            None
+        };
+
+        if let Some(asset_target) = asset_subpath {
+            if method == Method::GET || method == Method::HEAD {
+                let mut res = serve_asset(&asset_target);
+                if method == Method::HEAD {
+                    *res.body_mut() = full_body(Bytes::new());
+                }
+                return res;
+            } else {
+                return text_response(
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    "method not allowed\n",
+                    HeaderMap::new(),
+                );
+            }
         }
 
-        // 2. Login single page application (/login)
-        if path == "/login" {
-            if method == Method::GET {
+        // 2. Login single page application (/login or /login/)
+        if path == "/login" || path == "/login/" {
+            if method == Method::GET || method == Method::HEAD {
                 if let Some(_user) = self.check_session(req.headers()) {
                     let redirect = get_redirect_target(req.uri().query());
                     return redirect_response(&redirect);
                 }
-                return serve_asset("index.html");
+                let mut res = serve_asset("index.html");
+                if method == Method::HEAD {
+                    *res.body_mut() = full_body(Bytes::new());
+                }
+                return res;
             } else {
                 return text_response(
                     StatusCode::METHOD_NOT_ALLOWED,

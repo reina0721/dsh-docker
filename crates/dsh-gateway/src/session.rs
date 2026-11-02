@@ -36,35 +36,60 @@ pub struct SessionManager {
 impl SessionManager {
     /// Load existing persistent session key or generate and save a new one.
     pub fn new(auth_dir: &Path) -> Result<Self> {
-        let key_path = auth_dir.join("session_secret.key");
-        let secret_key = match Self::load_key(&key_path) {
-            Ok(key) => {
-                debug!(path = %key_path.display(), "loaded persistent session key");
-                key
+        let mut candidate_paths = vec![auth_dir.join("session_secret.key")];
+        if let Ok(dsh_home) = std::env::var("DSH_HOME") {
+            let p = PathBuf::from(dsh_home).join("session_secret.key");
+            if !candidate_paths.contains(&p) {
+                candidate_paths.push(p);
             }
-            Err(error) => {
-                info!(
-                    path = %key_path.display(),
-                    error = %error,
-                    "generating new persistent session key"
-                );
-                let key = Self::generate_key()?;
-                if let Err(save_err) = Self::save_key(&key_path, &key) {
-                    warn!(
-                        path = %key_path.display(),
-                        error = %save_err,
-                        "could not persist session key to disk; sessions will reset on process restart"
-                    );
-                } else {
-                    info!(path = %key_path.display(), "saved persistent session key (30-day session ready)");
+        }
+        let fallback_dsh = PathBuf::from("/home/node/.dsh/session_secret.key");
+        if !candidate_paths.contains(&fallback_dsh) {
+            candidate_paths.push(fallback_dsh);
+        }
+
+        // 1. Try to load an existing key from any candidate path
+        for path in &candidate_paths {
+            if path.exists() {
+                if let Ok(key) = Self::load_key(path) {
+                    debug!(path = %path.display(), "loaded persistent session key");
+                    return Ok(Self {
+                        secret_key: key,
+                        key_path: path.clone(),
+                    });
                 }
-                key
             }
-        };
+        }
+
+        // 2. Generate a new key and attempt to persist to the first writable candidate path
+        let key = Self::generate_key()?;
+        let mut chosen_path = candidate_paths[0].clone();
+        let mut saved = false;
+
+        for path in &candidate_paths {
+            if let Some(parent) = path.parent() {
+                if !parent.exists() {
+                    let _ = fs::create_dir_all(parent);
+                }
+            }
+            if Self::save_key(path, &key).is_ok() {
+                info!(path = %path.display(), "saved persistent session key (30-day session ready)");
+                chosen_path = path.clone();
+                saved = true;
+                break;
+            }
+        }
+
+        if !saved {
+            warn!(
+                primary_path = %candidate_paths[0].display(),
+                "could not persist session key to disk; sessions will reset on process restart"
+            );
+        }
 
         Ok(Self {
-            secret_key,
-            key_path,
+            secret_key: key,
+            key_path: chosen_path,
         })
     }
 

@@ -46,7 +46,6 @@ services:
       - type: bind
         source: "${RUNTIME_DIR:-./.runtime}/auth"
         target: /home/node/.dsh-auth
-        read_only: true
     expose:
       - "3080"
     stdin_open: true
