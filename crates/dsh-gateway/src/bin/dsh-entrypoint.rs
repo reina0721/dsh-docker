@@ -322,7 +322,7 @@ fn check_gateway(addr: SocketAddr) -> Result<()> {
         .and_then(|code| code.parse::<u16>().ok())
         .context("gateway returned a malformed HTTP response")?;
     match status {
-        200 | 401 => Ok(()),
+        200 | 302 | 401 => Ok(()),
         other => bail!("gateway healthcheck returned HTTP {other}"),
     }
 }

@@ -13,4 +13,6 @@ pub mod home;
 pub mod html;
 pub mod proxy;
 pub mod serve;
+pub mod session;
 pub mod trust;
+pub mod web_assets;

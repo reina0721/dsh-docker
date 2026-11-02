@@ -23,7 +23,9 @@ use tracing::{debug, warn};
 use crate::{
     auth::{AuthOutcome, AuthStore},
     config::GatewayConfig,
-    html, trust,
+    html,
+    session::SessionManager,
+    trust, web_assets,
 };
 
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -44,6 +46,7 @@ const HOP_BY_HOP: [&str; 8] = [
 pub struct Gateway {
     config: GatewayConfig,
     auth: AuthStore,
+    session: SessionManager,
     client: Client<HttpConnector, ProxyBody>,
     /// Stable DSH web cookie captured after the token exchange.
     web_cookie: RwLock<Option<String>>,
@@ -56,6 +59,13 @@ impl Gateway {
             config.legacy_auth_file.clone(),
             Duration::from_secs(1),
         );
+        let auth_dir = config
+            .auth_file
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+        let session =
+            SessionManager::new(auth_dir).unwrap_or_else(|_| SessionManager::from_key([0u8; 32]));
+
         let mut connector = HttpConnector::new();
         connector.set_connect_timeout(Some(Duration::from_secs(5)));
         connector.set_nodelay(true);
@@ -65,11 +75,12 @@ impl Gateway {
             upstream = %format!("{}:{}", config.upstream_host, config.upstream_port),
             users = auth.user_count(),
             compat = config.compat,
-            "gateway initialized"
+            "gateway initialized with modern session login support"
         );
         Self {
             config,
             auth,
+            session,
             client,
             web_cookie: RwLock::new(None),
         }
@@ -98,26 +109,96 @@ impl Gateway {
             return text_response(StatusCode::BAD_REQUEST, "bad request\n", HeaderMap::new());
         }
 
-        // OAuth callback endpoint from upstream identity providers (e.g. platform.deepseek.com).
+        // 1. Static web assets (/assets/*)
+        if path.starts_with("/assets/") && method == Method::GET {
+            return serve_asset(&path);
+        }
+
+        // 2. Login single page application (/login)
+        if path == "/login" {
+            if method == Method::GET {
+                if let Some(_user) = self.check_session(req.headers()) {
+                    let redirect = get_redirect_target(req.uri().query());
+                    return redirect_response(&redirect);
+                }
+                return serve_asset("index.html");
+            } else {
+                return text_response(
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    "method not allowed\n",
+                    HeaderMap::new(),
+                );
+            }
+        }
+
+        // 3. Auth API (/api/auth/*)
+        if path == "/api/auth/login" && method == Method::POST {
+            return self.handle_api_login(req).await;
+        }
+        if path == "/api/auth/logout" && method == Method::POST {
+            let mut headers = HeaderMap::new();
+            if let Ok(val) = HeaderValue::from_str(&SessionManager::format_logout_cookie()) {
+                headers.insert(SET_COOKIE, val);
+            }
+            return json_response(StatusCode::OK, r#"{"ok":true}"#, headers);
+        }
+        if path == "/api/auth/me" && method == Method::GET {
+            if let Some(user) = self.check_session(req.headers()) {
+                let payload = serde_json::json!({
+                    "authenticated": true,
+                    "user": user,
+                });
+                return json_response(StatusCode::OK, &payload.to_string(), HeaderMap::new());
+            } else {
+                let payload = serde_json::json!({
+                    "authenticated": false,
+                });
+                return json_response(StatusCode::OK, &payload.to_string(), HeaderMap::new());
+            }
+        }
+
+        // 4. OAuth callback endpoint from upstream identity providers (e.g. platform.deepseek.com).
         // Identity provider redirects are top-level cross-site navigations that do not carry Basic Auth headers.
         // Upstream DSH strictly validates PKCE code challenge and cryptographically random state.
         let is_oauth_callback = method == Method::GET && path == "/oauth/callback";
 
+        // 5. Authentication check (Session Cookie or Basic Auth)
         if !is_oauth_callback {
-            let outcome = match basic_credentials(req.headers()) {
-                Some((username, password)) => self.auth.authorize(&username, &password).await,
-                None => AuthOutcome::Denied,
+            let is_session_authed = self.check_session(req.headers()).is_some();
+            let is_basic_authed = match basic_credentials(req.headers()) {
+                Some((username, password)) => {
+                    match self.auth.authorize(&username, &password).await {
+                        AuthOutcome::Allowed => true,
+                        AuthOutcome::Denied => false,
+                        AuthOutcome::NoUsers => {
+                            return text_response(
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                "no authentication users configured\n",
+                                HeaderMap::new(),
+                            );
+                        }
+                    }
+                }
+                None => false,
             };
-            match outcome {
-                AuthOutcome::Allowed => {}
-                AuthOutcome::Denied => return self.unauthorized(),
-                AuthOutcome::NoUsers => {
-                    return text_response(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "no authentication users configured\n",
+
+            if !is_session_authed && !is_basic_authed {
+                if is_api_request(req.headers(), &path) {
+                    return json_response(
+                        StatusCode::UNAUTHORIZED,
+                        r#"{"ok":false,"error":"unauthorized"}"#,
                         HeaderMap::new(),
                     );
                 }
+                if is_browser_html_request(req.headers()) {
+                    let path_and_query = req
+                        .uri()
+                        .path_and_query()
+                        .map(|pq| pq.as_str())
+                        .unwrap_or(&path);
+                    return redirect_to_login(path_and_query);
+                }
+                return self.unauthorized();
             }
         }
 
@@ -503,6 +584,92 @@ impl Gateway {
         headers
     }
 
+    fn check_session(&self, headers: &HeaderMap) -> Option<String> {
+        let cookie_val = headers.get(COOKIE).and_then(|v| v.to_str().ok())?;
+        let token = SessionManager::extract_cookie(cookie_val)?;
+        let claims = self.session.verify_token(token).ok()?;
+        if self.auth.contains_user(&claims.sub) {
+            Some(claims.sub)
+        } else {
+            None
+        }
+    }
+
+    async fn handle_api_login(&self, req: Request<Incoming>) -> Response<ProxyBody> {
+        let limited = Limited::new(req.into_body(), 16 * 1024);
+        let collected = match limited.collect().await {
+            Ok(col) => col.to_bytes(),
+            Err(e) => {
+                warn!(error = %e, "login body collection failed");
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    r#"{"ok":false,"error":"请求格式无效"}"#,
+                    HeaderMap::new(),
+                );
+            }
+        };
+
+        #[derive(serde::Deserialize)]
+        struct LoginRequest {
+            username: String,
+            password: String,
+            remember: Option<bool>,
+        }
+
+        let payload: LoginRequest = match serde_json::from_slice(&collected) {
+            Ok(p) => p,
+            Err(_) => {
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    r#"{"ok":false,"error":"JSON数据解析错误"}"#,
+                    HeaderMap::new(),
+                );
+            }
+        };
+
+        match self
+            .auth
+            .authorize(&payload.username, payload.password.as_bytes())
+            .await
+        {
+            AuthOutcome::Allowed => {
+                let remember = payload.remember.unwrap_or(true);
+                match self.session.create_token(&payload.username, remember) {
+                    Ok((token, duration)) => {
+                        let mut headers = HeaderMap::new();
+                        let cookie_val = SessionManager::format_cookie(&token, duration);
+                        if let Ok(v) = HeaderValue::from_str(&cookie_val) {
+                            headers.insert(SET_COOKIE, v);
+                        }
+                        let resp = serde_json::json!({
+                            "ok": true,
+                            "user": payload.username,
+                        });
+                        json_response(StatusCode::OK, &resp.to_string(), headers)
+                    }
+                    Err(err) => {
+                        warn!(error = %err, "failed to create session token");
+                        json_response(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            r#"{"ok":false,"error":"生成会话失败"}"#,
+                            HeaderMap::new(),
+                        )
+                    }
+                }
+            }
+            AuthOutcome::Denied => json_response(
+                StatusCode::UNAUTHORIZED,
+                r#"{"ok":false,"error":"用户名或密码错误"}"#,
+                HeaderMap::new(),
+            ),
+            AuthOutcome::NoUsers => json_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                r#"{"ok":false,"error":"系统尚未配置管理员账户"}"#,
+                HeaderMap::new(),
+            ),
+        }
+    }
+
     fn unauthorized(&self) -> Response<ProxyBody> {
         let mut headers = HeaderMap::new();
         let challenge = format!(
@@ -670,6 +837,147 @@ fn dsh_cookie_from_headers(headers: &HeaderMap) -> Option<String> {
         }
     }
     None
+}
+
+fn json_response(
+    status: StatusCode,
+    json_str: &str,
+    mut headers: HeaderMap,
+) -> Response<ProxyBody> {
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    headers.insert(
+        http::header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store"),
+    );
+    with_headers(status, headers, Bytes::copy_from_slice(json_str.as_bytes()))
+}
+
+fn redirect_response(location: &str) -> Response<ProxyBody> {
+    let mut headers = HeaderMap::new();
+    if let Ok(value) = HeaderValue::from_str(location) {
+        headers.insert(http::header::LOCATION, value);
+    }
+    headers.insert(
+        http::header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store"),
+    );
+    with_headers(StatusCode::FOUND, headers, Bytes::new())
+}
+
+fn redirect_to_login(path_and_query: &str) -> Response<ProxyBody> {
+    if path_and_query.is_empty() || path_and_query == "/" {
+        redirect_response("/login")
+    } else {
+        redirect_response(&format!("/login?redirect={}", url_encode(path_and_query)))
+    }
+}
+
+fn serve_asset(path: &str) -> Response<ProxyBody> {
+    match web_assets::get_asset(path) {
+        Some((mime, data)) => {
+            let mut headers = HeaderMap::new();
+            headers.insert(CONTENT_TYPE, HeaderValue::from_static(mime));
+            if path.contains("assets/") {
+                headers.insert(
+                    http::header::CACHE_CONTROL,
+                    HeaderValue::from_static("public, max-age=31536000, immutable"),
+                );
+            } else {
+                headers.insert(
+                    http::header::CACHE_CONTROL,
+                    HeaderValue::from_static("no-cache, no-store, must-revalidate"),
+                );
+            }
+            with_headers(StatusCode::OK, headers, data)
+        }
+        None => text_response(StatusCode::NOT_FOUND, "asset not found\n", HeaderMap::new()),
+    }
+}
+
+fn get_redirect_target(query: Option<&str>) -> String {
+    let Some(q) = query else {
+        return "/".to_string();
+    };
+    for part in q.split('&') {
+        if let Some((k, v)) = part.split_once('=') {
+            if k == "redirect" {
+                let decoded = url_decode(v);
+                if decoded.starts_with('/') && !decoded.starts_with("//") {
+                    return decoded;
+                }
+            }
+        }
+    }
+    "/".to_string()
+}
+
+fn url_encode(input: &str) -> String {
+    let mut encoded = String::with_capacity(input.len());
+    for byte in input.bytes() {
+        match byte {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                encoded.push_str(&format!("%{:02X}", byte));
+            }
+        }
+    }
+    encoded
+}
+
+fn url_decode(input: &str) -> String {
+    let mut bytes = Vec::with_capacity(input.len());
+    let mut chars = input.bytes();
+    while let Some(b) = chars.next() {
+        if b == b'%' {
+            let h1 = chars.next();
+            let h2 = chars.next();
+            if let (Some(c1), Some(c2)) = (h1, h2) {
+                let hex_str = [c1, c2];
+                if let Ok(hex_s) = std::str::from_utf8(&hex_str) {
+                    if let Ok(val) = u8::from_str_radix(hex_s, 16) {
+                        bytes.push(val);
+                        continue;
+                    }
+                }
+            }
+        } else if b == b'+' {
+            bytes.push(b' ');
+            continue;
+        }
+        bytes.push(b);
+    }
+    String::from_utf8(bytes).unwrap_or_else(|_| "/".to_string())
+}
+
+fn is_api_request(headers: &HeaderMap, path: &str) -> bool {
+    if path.starts_with("/api/") {
+        return true;
+    }
+    if let Some(accept) = headers
+        .get(http::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+    {
+        if accept.contains("application/json") && !accept.contains("text/html") {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_browser_html_request(headers: &HeaderMap) -> bool {
+    if let Some(accept) = headers
+        .get(http::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+    {
+        accept.contains("text/html")
+    } else {
+        false
+    }
 }
 
 #[cfg(test)]

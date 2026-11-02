@@ -387,3 +387,167 @@ async fn oauth_callback_bypasses_basic_auth_and_cross_site() {
     let _ = timeout(Duration::from_secs(2), gateway).await;
     upstream.abort();
 }
+
+#[tokio::test]
+async fn modern_session_login_and_persistence_lifecycle() {
+    let auth_dir = tempfile::tempdir().unwrap();
+    let auth_path = auth_dir.path().join("users.htpasswd");
+    let mut users = UserStore::new();
+    users.upsert("admin", dsh_auth::hash_password(b"adminpass", 4).unwrap());
+    users.write_atomic(&auth_path, 0o600).unwrap();
+
+    let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream_port = upstream_listener.local_addr().unwrap().port();
+    let upstream = tokio::spawn(async move {
+        loop {
+            let Ok((stream, _)) = upstream_listener.accept().await else {
+                break;
+            };
+            tokio::spawn(async move {
+                let service = service_fn(move |request: Request<Incoming>| async move {
+                    if request.uri().path() == "/app" {
+                        let mut response = Response::new(Full::new(Bytes::from("hello dsh app")));
+                        *response.status_mut() = http::StatusCode::OK;
+                        Ok::<_, Infallible>(response)
+                    } else {
+                        let mut response = Response::new(Full::new(Bytes::from("not found")));
+                        *response.status_mut() = http::StatusCode::NOT_FOUND;
+                        Ok::<_, Infallible>(response)
+                    }
+                });
+                let _ = http1::Builder::new()
+                    .serve_connection(TokioIo::new(stream), service)
+                    .await;
+            });
+        }
+    });
+
+    let port = free_port().await;
+    let listen: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+    let upstream_socket: SocketAddr = format!("127.0.0.1:{upstream_port}").parse().unwrap();
+    let config = GatewayConfig::for_test(listen, upstream_socket, &auth_path);
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let gateway = tokio::spawn(serve(config.clone(), async move {
+        let _ = shutdown_rx.await;
+    }));
+    wait_ready(listen).await;
+
+    // 1. Browser navigation without auth -> 302 Redirect to /login
+    let browser_req = request(
+        listen,
+        "GET /app HTTP/1.1\r\nHost: localhost\r\nAccept: text/html,application/xhtml+xml\r\nConnection: close\r\n\r\n".to_string(),
+    )
+    .await;
+    assert!(
+        browser_req.starts_with("HTTP/1.1 302 Found"),
+        "{browser_req}"
+    );
+    assert!(
+        browser_req.contains("location: /login?redirect=/app"),
+        "{browser_req}"
+    );
+
+    // 2. Fetch /login page -> 200 OK with HTML content
+    let login_page = request(
+        listen,
+        "GET /login HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".to_string(),
+    )
+    .await;
+    assert!(login_page.starts_with("HTTP/1.1 200 OK"), "{login_page}");
+    assert!(login_page.contains("DeepSeek Harness"), "{login_page}");
+
+    // 3. Login attempt with wrong password -> 401 JSON
+    let bad_body = "{\"username\":\"admin\",\"password\":\"wrongpassword\"}";
+    let bad_login = request(
+        listen,
+        format!(
+            "POST /api/auth/login HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{bad_body}",
+            bad_body.len()
+        ),
+    )
+    .await;
+    assert!(
+        bad_login.starts_with("HTTP/1.1 401 Unauthorized"),
+        "{bad_login}"
+    );
+    assert!(bad_login.contains("用户名或密码错误"), "{bad_login}");
+
+    // 4. Login attempt with correct password -> 200 OK + Set-Cookie: dsh_session=...
+    let good_body = "{\"username\":\"admin\",\"password\":\"adminpass\"}";
+    let good_login = request(
+        listen,
+        format!(
+            "POST /api/auth/login HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{good_body}",
+            good_body.len()
+        ),
+    )
+    .await;
+    assert!(good_login.starts_with("HTTP/1.1 200 OK"), "{good_login}");
+    assert!(
+        good_login.contains("set-cookie: dsh_session="),
+        "{good_login}"
+    );
+    assert!(good_login.contains("Max-Age=2592000"), "{good_login}"); // 30 days remember me
+
+    // Extract cookie
+    let cookie_line = good_login
+        .lines()
+        .find(|line| line.to_ascii_lowercase().starts_with("set-cookie:"))
+        .expect("must contain set-cookie");
+    let cookie_val = cookie_line.split(':').nth(1).unwrap().trim();
+    let session_cookie = cookie_val.split(';').next().unwrap().trim();
+
+    // 5. Access /app with dsh_session cookie -> 200 OK from upstream DSH
+    let authed_app = request(
+        listen,
+        format!(
+            "GET /app HTTP/1.1\r\nHost: localhost\r\nCookie: {session_cookie}\r\nConnection: close\r\n\r\n"
+        ),
+    )
+    .await;
+    assert!(authed_app.starts_with("HTTP/1.1 200 OK"), "{authed_app}");
+    assert!(authed_app.contains("hello dsh app"), "{authed_app}");
+
+    // 6. Test /api/auth/me
+    let me = request(
+        listen,
+        format!(
+            "GET /api/auth/me HTTP/1.1\r\nHost: localhost\r\nCookie: {session_cookie}\r\nConnection: close\r\n\r\n"
+        ),
+    )
+    .await;
+    assert!(me.starts_with("HTTP/1.1 200 OK"), "{me}");
+    assert!(me.contains("\"authenticated\":true"), "{me}");
+    assert!(me.contains("\"user\":\"admin\""), "{me}");
+
+    // 7. Restart gateway (simulate container restart) with the same auth_dir
+    let _ = shutdown_tx.send(());
+    let _ = timeout(Duration::from_secs(2), gateway).await;
+
+    let (shutdown_tx2, shutdown_rx2) = oneshot::channel();
+    let gateway2 = tokio::spawn(serve(config, async move {
+        let _ = shutdown_rx2.await;
+    }));
+    wait_ready(listen).await;
+
+    // 8. Access /app AGAIN with previous cookie after restart -> Still authenticated! Zero re-login!
+    let authed_after_restart = request(
+        listen,
+        format!(
+            "GET /app HTTP/1.1\r\nHost: localhost\r\nCookie: {session_cookie}\r\nConnection: close\r\n\r\n"
+        ),
+    )
+    .await;
+    assert!(
+        authed_after_restart.starts_with("HTTP/1.1 200 OK"),
+        "{authed_after_restart}"
+    );
+    assert!(
+        authed_after_restart.contains("hello dsh app"),
+        "{authed_after_restart}"
+    );
+
+    let _ = shutdown_tx2.send(());
+    let _ = timeout(Duration::from_secs(2), gateway2).await;
+    upstream.abort();
+}

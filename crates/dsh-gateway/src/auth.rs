@@ -80,6 +80,12 @@ impl AuthStore {
         self.state.lock().expect("auth state poisoned").store.len()
     }
 
+    pub fn contains_user(&self, username: &str) -> bool {
+        self.reload_if_changed(false);
+        let state = self.state.lock().expect("auth state poisoned");
+        state.store.contains(username)
+    }
+
     pub fn auth_path(&self) -> &PathBuf {
         &self.primary
     }

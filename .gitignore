@@ -27,11 +27,13 @@ SHA256SUMS
 *.bak-*
 
 # Logs / temp
+*.key
 *.log
 logs/
 *.pid
 *.tmp
 *.temp
+*.tsbuildinfo
 *.swp
 *.swo
 *~

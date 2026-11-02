@@ -344,6 +344,8 @@ fn status_text(config: &Config, docker: &Docker, verbose: bool) -> Result<()> {
     }
 
     match probe_http(config) {
+        Ok(200) => println!("HTTP check   : 200 (OK: web session login ready)"),
+        Ok(302) => println!("HTTP check   : 302 (OK: redirected to /login)"),
         Ok(401) => println!("HTTP check   : 401 (normal: Basic Auth is active)"),
         Ok(code) => println!("HTTP check   : {code}"),
         Err(error) => println!("HTTP check   : unavailable ({error:#})"),
@@ -1567,7 +1569,7 @@ fn wait_health(config: &Config) -> Result<()> {
     let mut last_error = None;
     for _ in 0..90 {
         match probe_http(config) {
-            Ok(200 | 401) => {
+            Ok(200 | 302 | 401) => {
                 println!("Health check OK: {url}");
                 return Ok(());
             }
