@@ -37,7 +37,7 @@ runtime paths. JSON schema:
 
 ```json
 {
-  "cli_version": "2.0.9",
+  "cli_version": "2.0.10",
   "project_dir": "...",
   "runtime_dir": "...",
   "image": "ghcr.io/reina0721/dsh-docker:2",

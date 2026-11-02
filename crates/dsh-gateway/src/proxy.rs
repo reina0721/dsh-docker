@@ -109,29 +109,21 @@ impl Gateway {
             return text_response(StatusCode::BAD_REQUEST, "bad request\n", HeaderMap::new());
         }
 
-        // 1. Static web assets (/assets/* or /login/assets/*)
-        let asset_subpath = if let Some(stripped) = path.strip_prefix("/login/assets/") {
-            Some(format!("assets/{stripped}"))
-        } else if let Some(stripped) = path.strip_prefix("/assets/") {
-            Some(format!("assets/{stripped}"))
-        } else {
-            None
-        };
-
-        if let Some(asset_target) = asset_subpath {
+        // 1. Static web assets for Login SPA (/_dsh_login/* or /login/assets/*)
+        if path.starts_with("/_dsh_login/") || path.starts_with("/login/assets/") {
             if method == Method::GET || method == Method::HEAD {
-                let mut res = serve_asset(&asset_target);
-                if method == Method::HEAD {
-                    *res.body_mut() = full_body(Bytes::new());
+                if let Some(mut res) = try_serve_asset(&path) {
+                    if method == Method::HEAD {
+                        *res.body_mut() = full_body(Bytes::new());
+                    }
+                    return res;
                 }
-                return res;
-            } else {
-                return text_response(
-                    StatusCode::METHOD_NOT_ALLOWED,
-                    "method not allowed\n",
-                    HeaderMap::new(),
-                );
             }
+            return text_response(
+                StatusCode::NOT_FOUND,
+                "asset not found\n",
+                HeaderMap::new(),
+            );
         }
 
         // 2. Login single page application (/login or /login/)
@@ -141,7 +133,14 @@ impl Gateway {
                     let redirect = get_redirect_target(req.uri().query());
                     return redirect_response(&redirect);
                 }
-                let mut res = serve_asset("index.html");
+                let mut res = match try_serve_asset("index.html") {
+                    Some(r) => r,
+                    None => text_response(
+                        StatusCode::NOT_FOUND,
+                        "login page not found\n",
+                        HeaderMap::new(),
+                    ),
+                };
                 if method == Method::HEAD {
                     *res.body_mut() = full_body(Bytes::new());
                 }
@@ -899,26 +898,22 @@ fn redirect_to_login(path_and_query: &str) -> Response<ProxyBody> {
     }
 }
 
-fn serve_asset(path: &str) -> Response<ProxyBody> {
-    match web_assets::get_asset(path) {
-        Some((mime, data)) => {
-            let mut headers = HeaderMap::new();
-            headers.insert(CONTENT_TYPE, HeaderValue::from_static(mime));
-            if path.contains("assets/") {
-                headers.insert(
-                    http::header::CACHE_CONTROL,
-                    HeaderValue::from_static("public, max-age=31536000, immutable"),
-                );
-            } else {
-                headers.insert(
-                    http::header::CACHE_CONTROL,
-                    HeaderValue::from_static("no-cache, no-store, must-revalidate"),
-                );
-            }
-            with_headers(StatusCode::OK, headers, data)
-        }
-        None => text_response(StatusCode::NOT_FOUND, "asset not found\n", HeaderMap::new()),
+fn try_serve_asset(path: &str) -> Option<Response<ProxyBody>> {
+    let (mime, data) = web_assets::get_asset(path)?;
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static(mime));
+    if path.contains("assets/") {
+        headers.insert(
+            http::header::CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=31536000, immutable"),
+        );
+    } else {
+        headers.insert(
+            http::header::CACHE_CONTROL,
+            HeaderValue::from_static("no-cache, no-store, must-revalidate"),
+        );
     }
+    Some(with_headers(StatusCode::OK, headers, data))
 }
 
 fn get_redirect_target(query: Option<&str>) -> String {

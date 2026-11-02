@@ -456,6 +456,14 @@ async fn modern_session_login_and_persistence_lifecycle() {
     assert!(login_page.starts_with("HTTP/1.1 200 OK"), "{login_page}");
     assert!(login_page.contains("DeepSeek Harness"), "{login_page}");
 
+    // 2b. Fetch login static asset under /_dsh_login/* -> 200 OK
+    let login_asset = request(
+        listen,
+        "GET /_dsh_login/assets/index-DBs9MlhU.js HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".to_string(),
+    )
+    .await;
+    assert!(login_asset.starts_with("HTTP/1.1 200 OK"), "{login_asset}");
+
     // 3. Login attempt with wrong password -> 401 JSON
     let bad_body = "{\"username\":\"admin\",\"password\":\"wrongpassword\"}";
     let bad_login = request(

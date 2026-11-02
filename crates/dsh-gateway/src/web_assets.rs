@@ -9,11 +9,15 @@ pub struct WebAssets;
 
 /// Retrieve embedded asset mime type and bytes.
 pub fn get_asset(path: &str) -> Option<(&'static str, Bytes)> {
-    let normalized = path.trim_start_matches('/');
-    let target = if normalized.is_empty() {
+    let raw = path.trim_start_matches('/');
+    let target = if let Some(stripped) = raw.strip_prefix("_dsh_login/") {
+        stripped
+    } else if let Some(stripped) = raw.strip_prefix("login/assets/") {
+        stripped
+    } else if raw.is_empty() {
         "index.html"
     } else {
-        normalized
+        raw
     };
 
     let file = WebAssets::get(target)?;
