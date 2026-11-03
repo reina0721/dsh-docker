@@ -15,13 +15,15 @@
 set -Eeuo pipefail
 
 REPO="reina0721/dsh-docker"
-FALLBACK_VERSION="v2.0.10"
+FALLBACK_VERSION="v2.0.11"
 
 # Defaults
 TARGET_DIR="${DSHCTL_DIR:-$HOME/dsh-docker}"
 TARGET_DIR_EXPLICIT=0
 PORT="${DSH_PORT:-3080}"
 PORT_EXPLICIT=0
+CONTAINER_NAME="${DSH_CONTAINER_NAME:-}"
+CONTAINER_NAME_EXPLICIT=0
 BIND_ADDR="${BIND_ADDRESS:-127.0.0.1}"
 BIND_EXPLICIT=0
 VARIANT="${DSH_IMAGE_VARIANT:-dev}"
@@ -57,6 +59,7 @@ DSH Docker 安装向导 (Interactive & Self-Contained Installer)
 选项:
   --dir DIR              项目安装目录 (默认: ~/dsh-docker)
   --port PORT            Web 访问端口 (默认: 3080)
+  --container-name NAME  自定义 Docker 容器名称 (默认: 自动生成)
   --bind IP              监听绑定地址 (默认: 127.0.0.1)
   --variant dev|slim     开发环境变体 (默认: dev)
   --mirror global|cn|off 网络加速策略 (默认: global)
@@ -86,6 +89,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --dir) TARGET_DIR="$2"; TARGET_DIR_EXPLICIT=1; shift 2 ;;
         --port) PORT="$2"; PORT_EXPLICIT=1; shift 2 ;;
+        --container-name) CONTAINER_NAME="$2"; CONTAINER_NAME_EXPLICIT=1; shift 2 ;;
         --bind) BIND_ADDR="$2"; BIND_EXPLICIT=1; shift 2 ;;
         --variant) VARIANT="$2"; VARIANT_EXPLICIT=1; shift 2 ;;
         --mirror) MIRROR_POLICY="$2"; MIRROR_EXPLICIT=1; shift 2 ;;
@@ -241,7 +245,7 @@ EOF
 
     # 1. Target Directory
     if [ "$TARGET_DIR_EXPLICIT" -eq 0 ]; then
-        printf '\n[1/7] 项目安装目录 (Installation Directory)\n'
+        printf '\n[1/8] 项目安装目录 (Installation Directory)\n'
         printf '      将在此目录下存放 dshctl、Docker 编排文件、配置与工作区数据。\n'
         prompt_input "请输入安装目录 [默认: ${TARGET_DIR}]: " "${TARGET_DIR}" TARGET_DIR
         case "$TARGET_DIR" in
@@ -251,7 +255,7 @@ EOF
 
     # 2. Port
     if [ "$PORT_EXPLICIT" -eq 0 ]; then
-        printf '\n[2/7] 外部访问端口 (Port Mapping)\n'
+        printf '\n[2/8] 外部访问端口 (Port Mapping)\n'
         printf '      DSH Web 服务的访问端口。\n'
         while true; do
             prompt_input "请输入访问端口 [默认: ${PORT}]: " "${PORT}" PORT
@@ -268,7 +272,7 @@ EOF
 
     # 3. Bind address
     if [ "$BIND_EXPLICIT" -eq 0 ]; then
-        printf '\n[3/7] 监听绑定地址 (Bind Address)\n'
+        printf '\n[3/8] 监听绑定地址 (Bind Address)\n'
         printf '      1) 127.0.0.1 (推荐: 仅本机访问，适合搭配 Nginx/Caddy 等反向代理) [默认]\n'
         printf '      2) 0.0.0.0   (局域网或公网直接访问)\n'
         prompt_input "请选择监听地址 [1/2, 默认: 1]: " "1" BIND_CHOICE
@@ -280,7 +284,7 @@ EOF
 
     # 4. Variant
     if [ "$VARIANT_EXPLICIT" -eq 0 ]; then
-        printf '\n[4/7] 开发环境变体 (Environment Variant)\n'
+        printf '\n[4/8] 开发环境变体 (Environment Variant)\n'
         printf '      1) dev  (完整开发环境: 包含 Node, DSH, Go, Rust, pnpm, Python) [默认]\n'
         printf '      2) slim (轻量精简环境: 仅包含 Node, DSH, Git, SSH 基础依赖)\n'
         prompt_input "请选择变体 [1/2, 默认: 1]: " "1" VARIANT_CHOICE
@@ -292,7 +296,7 @@ EOF
 
     # 5. Mirror
     if [ "$MIRROR_EXPLICIT" -eq 0 ]; then
-        printf '\n[5/7] 网络加速策略 (Network Acceleration)\n'
+        printf '\n[5/8] 网络加速策略 (Network Acceleration)\n'
         printf '      1) global (官方默认源: GitHub / Docker Hub / NPM 官方源) [默认]\n'
         printf '      2) cn     (中国大陆加速: 使用国内 GitHub 代理、NPM 镜像及 Docker 镜像源)\n'
         prompt_input "请选择加速策略 [1/2, 默认: 1]: " "1" MIRROR_CHOICE
@@ -304,7 +308,7 @@ EOF
 
     # 6. Password Strength Mode
     if [ "$PASSWORD_MODE_EXPLICIT" -eq 0 ]; then
-        printf '\n[6/7] 密码安全强度模式 (Password Security Mode)\n'
+        printf '\n[6/8] 密码安全强度模式 (Password Security Mode)\n'
         printf '      1) strong (强密码模式: 密码至少12位，安全性高) [默认]\n'
         printf '      2) weak   (弱密码模式: 允许简短密码，至少6位，如 123456，适合测试环境)\n'
         prompt_input "请选择密码强度模式 [1/2, 默认: 1]: " "1" PASS_MODE_CHOICE
@@ -322,7 +326,7 @@ EOF
 
     # 7. Admin Account
     if [ "$ADMIN_USER_EXPLICIT" -eq 0 ]; then
-        printf '\n[7/7] 管理员账号设置 (Basic Auth)\n'
+        printf '\n[7/8] 管理员账号设置 (Basic Auth)\n'
         prompt_input "请输入管理员用户名 [默认: admin]: " "admin" ADMIN_USER
     fi
     if [ "$ADMIN_PASS_EXPLICIT" -eq 0 ]; then
@@ -343,12 +347,33 @@ EOF
         fi
     fi
 
+    # 8. Container Name
+    if [ "$CONTAINER_NAME_EXPLICIT" -eq 0 ]; then
+        printf '\n[8/8] 自定义容器名称 (Docker Container Name, 可选)\n'
+        printf '      留空将由 Docker Compose 根据项目名称自动生成。\n'
+        while true; do
+            prompt_input "请输入容器名称 [留空使用默认自动生成]: " "" CONTAINER_NAME
+            if [ -n "$CONTAINER_NAME" ]; then
+                if ! printf '%s\n' "$CONTAINER_NAME" | grep -Eq '^[a-zA-Z0-9][a-zA-Z0-9_.-]+$'; then
+                    warn "容器名称必须以字母或数字开头，且仅包含字母、数字、点(.)、下划线(_)或连字符(-)"
+                    continue
+                fi
+            fi
+            break
+        done
+    fi
+
     # Confirm summary
     printf '\n----------------------------------------------------------------\n'
     printf '安装配置摘要:\n'
     printf '  项目目录 : %s\n' "$TARGET_DIR"
     printf '  访问端口 : %s\n' "$PORT"
     printf '  绑定地址 : %s\n' "$BIND_ADDR"
+    if [ -n "$CONTAINER_NAME" ]; then
+        printf '  容器名称 : %s (自定义)\n' "$CONTAINER_NAME"
+    else
+        printf '  容器名称 : [默认自动生成]\n'
+    fi
     printf '  环境变体 : %s\n' "$VARIANT"
     printf '  加速策略 : %s\n' "$MIRROR_POLICY"
     printf '  管理账号 : %s\n' "$ADMIN_USER"
@@ -388,6 +413,12 @@ fi
 
 if [ "${#ADMIN_PASS}" -lt "$MIN_PASSWORD_LEN" ]; then
     die "密码长度至少需要 ${MIN_PASSWORD_LEN} 位（当前为 ${#ADMIN_PASS} 位），如需弱密码请使用 --weak-password 或 --password-mode weak"
+fi
+
+if [ -n "$CONTAINER_NAME" ]; then
+    if ! printf '%s\n' "$CONTAINER_NAME" | grep -Eq '^[a-zA-Z0-9][a-zA-Z0-9_.-]+$'; then
+        die "invalid --container-name: must match '^[a-zA-Z0-9][a-zA-Z0-9_.-]+$'"
+    fi
 fi
 
 # ==============================================================================
@@ -528,6 +559,9 @@ replace_env "DSH_IMAGE_MODE" "build" "$ENV_FILE"
 replace_env "DSH_IMAGE" "dsh-docker:local" "$ENV_FILE"
 replace_env "DSH_IMAGE_MIRROR" "$MIRROR_POLICY" "$ENV_FILE"
 replace_env "AUTH_MIN_PASSWORD_LENGTH" "$MIN_PASSWORD_LEN" "$ENV_FILE"
+if [ -n "$CONTAINER_NAME" ]; then
+    replace_env "DSH_CONTAINER_NAME" "$CONTAINER_NAME" "$ENV_FILE"
+fi
 
 # Resolve latest upstream DSH version to prevent stale Docker build cache
 resolve_latest_dsh_version() {

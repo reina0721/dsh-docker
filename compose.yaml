@@ -3,6 +3,7 @@ x-dsh-docker: "2"
 services:
   dsh:
     image: "${DSH_IMAGE:-dsh-docker:local}"
+    container_name: "${DSH_CONTAINER_NAME:-${COMPOSE_PROJECT_NAME:-dsh-docker}-dsh-1}"
     restart: unless-stopped
     working_dir: /workspace
     environment:

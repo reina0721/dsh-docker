@@ -78,8 +78,12 @@ These only affect local builds. Prebuilt images already contain the toolchains.
 ## Compose overrides
 
 The CLI loads `compose.yaml`, an optional `compose.override.yaml`/`.yml`, and
-`compose.build.yaml` when building. `COMPOSE_PROJECT_NAME` overrides the derived
-project name.
+`compose.build.yaml` when building.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `COMPOSE_PROJECT_NAME` | directory name (e.g. `dsh-docker`) | Docker Compose project namespace |
+| `DSH_CONTAINER_NAME` | `${COMPOSE_PROJECT_NAME:-dsh-docker}-dsh-1` | Explicit custom container name (must match `[a-zA-Z0-9][a-zA-Z0-9_.-]+`) |
 
 ## Precedence
 

@@ -155,6 +155,8 @@ pub struct Config {
     pub rust_version: String,
     pub pnpm_version: String,
     pub build_mirror: String,
+    /// Explicit Docker container name (or None to use Compose default).
+    pub container_name: Option<String>,
     /// Values read from `.env` plus recognised process-environment overrides.
     pub env: BTreeMap<String, String>,
 }
@@ -230,6 +232,10 @@ impl Config {
         let rust_version = get("RUST_VERSION").unwrap_or("1.90.0").trim().to_owned();
         let pnpm_version = get("PNPM_VERSION").unwrap_or("11.7.0").trim().to_owned();
         let build_mirror = get("BUILD_MIRROR").unwrap_or("global").trim().to_owned();
+        let container_name = get("DSH_CONTAINER_NAME")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
 
         let config = Self {
             project_dir,
@@ -259,6 +265,7 @@ impl Config {
             rust_version,
             pnpm_version,
             build_mirror,
+            container_name,
             env,
         };
         config.validate()?;
@@ -312,6 +319,9 @@ impl Config {
             if mirror.contains('/') || mirror.contains(':') || mirror.contains("://") {
                 bail!("DSH_IMAGE_MIRRORS entries must be registry hosts, got {mirror:?}");
             }
+        }
+        if let Some(ref name) = self.container_name {
+            validate_container_name(name)?;
         }
         if self.runtime_uid == 0 {
             // Running the container as uid 0 is allowed, but callers should be
@@ -416,6 +426,9 @@ impl Config {
         values.insert("RUNTIME_UID".into(), self.runtime_uid.to_string());
         values.insert("RUNTIME_GID".into(), self.runtime_gid.to_string());
         values.insert("COMPOSE_PROJECT_NAME".into(), self.compose_project_name());
+        if let Some(ref name) = self.container_name {
+            values.insert("DSH_CONTAINER_NAME".into(), name.clone());
+        }
         values.into_iter().collect()
     }
 
@@ -573,6 +586,31 @@ fn strip_quotes(value: &str) -> &str {
     value
 }
 
+/// Validate Docker container name according to Docker daemon rules:
+/// Must start with an alphanumeric character, followed by alphanumeric, `_`, `.`, or `-`.
+pub fn validate_container_name(name: &str) -> Result<()> {
+    let name = name.trim();
+    if name.is_empty() {
+        bail!("DSH_CONTAINER_NAME must not be empty");
+    }
+    if name.len() < 2 {
+        bail!("DSH_CONTAINER_NAME must be at least 2 characters long (got {name:?})");
+    }
+    let mut chars = name.chars();
+    let first = chars.next().unwrap();
+    if !first.is_ascii_alphanumeric() {
+        bail!("DSH_CONTAINER_NAME must start with an alphanumeric character (got {name:?})");
+    }
+    for c in chars {
+        if !c.is_ascii_alphanumeric() && c != '_' && c != '.' && c != '-' {
+            bail!(
+                "DSH_CONTAINER_NAME can only contain alphanumeric characters, '_', '.', or '-' (got {name:?})"
+            );
+        }
+    }
+    Ok(())
+}
+
 fn sanitize_project_name(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for ch in value.to_ascii_lowercase().chars() {
@@ -671,5 +709,34 @@ mod tests {
     fn sanitizes_project_names() {
         assert_eq!(sanitize_project_name("My Repo!"), "my-repo");
         assert_eq!(sanitize_project_name("..."), "dsh-docker");
+    }
+
+    #[test]
+    fn validates_container_name() {
+        assert!(validate_container_name("my-container").is_ok());
+        assert!(validate_container_name("dsh_box.1").is_ok());
+        assert!(validate_container_name("a").is_err());
+        assert!(validate_container_name("-invalid").is_err());
+        assert!(validate_container_name("bad name").is_err());
+        assert!(validate_container_name("bad/name").is_err());
+    }
+
+    #[test]
+    fn container_name_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = Config::from_map(dir.path(), BTreeMap::new()).unwrap();
+        assert_eq!(cfg.container_name, None);
+
+        let cfg = Config::from_map(
+            dir.path(),
+            map(&[("DSH_CONTAINER_NAME", "custom-box")]),
+        )
+        .unwrap();
+        assert_eq!(cfg.container_name.as_deref(), Some("custom-box"));
+        let env_map: BTreeMap<String, String> = cfg.compose_env().into_iter().collect();
+        assert_eq!(
+            env_map.get("DSH_CONTAINER_NAME").map(String::as_str),
+            Some("custom-box")
+        );
     }
 }

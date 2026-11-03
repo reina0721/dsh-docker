@@ -16,6 +16,7 @@ param(
     [string]$Dir = (Join-Path $HOME 'dsh-docker'),
     [int]$Port = 3080,
     [string]$Bind = '127.0.0.1',
+    [string]$ContainerName = '',
     [ValidateSet('dev', 'slim')]
     [string]$Variant = 'dev',
     [ValidateSet('global', 'cn', 'off')]
@@ -37,7 +38,7 @@ $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $Repo = 'reina0721/dsh-docker'
-$FallbackVersion = 'v2.0.10'
+$FallbackVersion = 'v2.0.11'
 $MirrorPrefixes = @('https://ghfast.top/', 'https://gh-proxy.com/')
 
 function Write-Info($Message) { Write-Host $Message }
@@ -105,7 +106,7 @@ if ($isInteractive) {
         $Mirror = 'global'
     }
 
-    $AdminUser = Prompt-Value "`n[5/5] 管理员用户名" $AdminUser
+    $AdminUser = Prompt-Value "`n[5/6] 管理员用户名" $AdminUser
     $typedPass = Prompt-SecretValue "请输入管理员密码 (至少12位，留空自动生成安全密码): "
     if ([string]::IsNullOrWhiteSpace($typedPass)) {
         $AdminPassword = Generate-RandomPassword
@@ -114,11 +115,18 @@ if ($isInteractive) {
         $AdminPassword = $typedPass
     }
 
+    $ContainerName = Prompt-Value "`n[6/6] Docker 容器名称 (留空使用默认自动生成)" $ContainerName
+
     Write-Host "`n----------------------------------------------------------------"
     Write-Host "安装配置摘要:"
     Write-Host "  项目目录 : $Dir"
     Write-Host "  访问端口 : $Port"
     Write-Host "  绑定地址 : $Bind"
+    if (-not [string]::IsNullOrWhiteSpace($ContainerName)) {
+        Write-Host "  容器名称 : $ContainerName (自定义)"
+    } else {
+        Write-Host "  容器名称 : [默认自动生成]"
+    }
     Write-Host "  加速策略 : $Mirror"
     Write-Host "  管理账号 : $AdminUser"
     if ($passwordGenerated) {
@@ -254,6 +262,13 @@ try {
             $content = $content -replace '(?m)^AUTH_MIN_PASSWORD_LENGTH=.*', "AUTH_MIN_PASSWORD_LENGTH=$minLen"
         } else {
             $content += "`nAUTH_MIN_PASSWORD_LENGTH=$minLen`n"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($ContainerName)) {
+            if ($content -match '(?m)^#?\s*DSH_CONTAINER_NAME=') {
+                $content = $content -replace '(?m)^#?\s*DSH_CONTAINER_NAME=.*', "DSH_CONTAINER_NAME=$ContainerName"
+            } else {
+                $content += "`nDSH_CONTAINER_NAME=$ContainerName`n"
+            }
         }
         Set-Content -Path $envFile -Value $content -Encoding UTF8
     }

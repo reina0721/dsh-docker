@@ -272,6 +272,7 @@ fn cmd_status(config: &Config, verbose: bool, args: StatusArgs) -> Result<()> {
             "cli_version": env!("CARGO_PKG_VERSION"),
             "project_dir": config.project_dir,
             "runtime_dir": config.runtime_dir,
+            "container_name": config.container_name,
             "image": image,
             "variant": config.image_variant.to_string(),
             "dsh_version": dsh_version.as_deref().unwrap_or(&config.dsh_version),
@@ -299,11 +300,13 @@ fn status_text(config: &Config, docker: &Docker, verbose: bool) -> Result<()> {
         println!("  (none)");
     } else {
         for service in &services {
-            let name = service
+            let service_name = service
                 .get("Service")
-                .or_else(|| service.get("Name"))
                 .and_then(|value| value.as_str())
-                .unwrap_or("?");
+                .unwrap_or("dsh");
+            let container_name = service
+                .get("Name")
+                .and_then(|value| value.as_str());
             let state = service
                 .get("State")
                 .and_then(|value| value.as_str())
@@ -312,7 +315,11 @@ fn status_text(config: &Config, docker: &Docker, verbose: bool) -> Result<()> {
                 .get("Health")
                 .and_then(|value| value.as_str())
                 .unwrap_or("-");
-            println!("  {name}: {state} (health: {health})");
+            if let Some(cname) = container_name {
+                println!("  {service_name} ({cname}): {state} (health: {health})");
+            } else {
+                println!("  {service_name}: {state} (health: {health})");
+            }
         }
     }
 
@@ -334,6 +341,9 @@ fn status_text(config: &Config, docker: &Docker, verbose: bool) -> Result<()> {
     println!("Auth users   : {users}");
     println!("Image        : {image}");
     println!("Variant      : {}", config.image_variant);
+    if let Some(ref cname) = config.container_name {
+        println!("Container    : {cname} (custom)");
+    }
     let dsh_ver =
         detect_current_dsh_version(docker, config).unwrap_or_else(|| config.dsh_version.clone());
     println!("DSH version  : {dsh_ver}");
@@ -531,6 +541,23 @@ fn cmd_doctor(config: &Config, verbose: bool, args: DoctorArgs) -> Result<()> {
             format!("{error:#}"),
             Some("run `dshctl config show`")
         ),
+    }
+
+    if let Some(ref cname) = config.container_name {
+        match dsh_config::validate_container_name(cname) {
+            Ok(()) => add!(
+                Level::Ok,
+                "container.name",
+                format!("custom container name is valid: {cname}"),
+                None
+            ),
+            Err(error) => add!(
+                Level::Fail,
+                "container.name",
+                format!("{error:#}"),
+                Some("DSH_CONTAINER_NAME must match [a-zA-Z0-9][a-zA-Z0-9_.-]+")
+            ),
+        }
     }
 
     match docker.compose_config_check() {
