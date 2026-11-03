@@ -81,7 +81,7 @@ jobs:
         run: docker compose -f compose.yaml -f compose.build.yaml config >/dev/null
       - uses: docker/setup-buildx-action@v3
       - name: Build slim image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
