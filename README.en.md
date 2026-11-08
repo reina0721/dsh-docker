@@ -87,7 +87,19 @@ curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.s
 | `--network-subnet <CIDR>` | empty | **Subnet CIDR** for the dedicated IP (e.g. `198.51.100.0/24`). |
 | `--network-gateway <GW>` | empty | **Gateway IP** for the subnet (e.g. `198.51.100.1`). |
 
-For details on deploying directly bound to a dedicated public IP, see [Direct Public IP Guide (docs/networking-ipvlan.md)](docs/networking-ipvlan.md).
+For details on deploying directly bound to a dedicated public IP, see [Direct Public IP Guide (docs/networking-ipvlan.md)](docs/networking-ipvlan.md):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash -s -- \
+  --dir /workapps/test/dsh-docker \
+  --variant dev \
+  --network-ip 198.51.100.2 \
+  --admin admin \
+  --password your_password \
+  --yes
+```
+
+> **Tip**: You only need to provide `--network-ip`. The network interface, subnet, and default gateway are automatically detected and derived by the installer (advanced users can override them via `--network-parent`, `--network-subnet`, `--network-gateway`).
 
 Open `http://127.0.0.1:3080/` and sign in with Basic Auth. The gateway captures DSH's
 one-time web token (redacted in logs) and injects it until DSH sets its auth cookie;

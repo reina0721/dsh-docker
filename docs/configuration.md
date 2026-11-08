@@ -25,10 +25,10 @@ When directly binding a dedicated public IP to the container where developed pro
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `DSH_NETWORK_MODE` | `bridge` | `bridge`, `ipvlan`, or `macvlan` |
-| `DSH_NETWORK_PARENT` | `eth0` | Parent physical interface on the host |
+| `DSH_NETWORK_PARENT` | `eth0` | Parent physical interface on the host (auto-detected if omitted) |
 | `DSH_NETWORK_IP` | empty | Dedicated IP address assigned to the container (required if `ipvlan`/`macvlan`) |
-| `DSH_NETWORK_SUBNET` | empty | Subnet CIDR (e.g. `198.51.100.0/24`) |
-| `DSH_NETWORK_GATEWAY` | empty | Gateway IP for the subnet (e.g. `198.51.100.1`) |
+| `DSH_NETWORK_SUBNET` | empty | Subnet CIDR (e.g. `198.51.100.0/24`; auto-derived if omitted) |
+| `DSH_NETWORK_GATEWAY` | empty | Gateway IP for the subnet (e.g. `198.51.100.1`; auto-derived if omitted) |
 | `DSH_NETWORK_IPVLAN_MODE` | `l2` | `l2` (Layer 2) or `l3` (Layer 3) |
 | `DSH_NETWORK_ATTACH_BRIDGE` | `true` | Dual-attach the default bridge network for host-container communication and outbound access |
 

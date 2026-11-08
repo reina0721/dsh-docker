@@ -28,29 +28,22 @@
 
 ## 快速配置指南
 
-### 第一步：在 VPS 宿主机获取网络信息
+### 第一步：准备你要绑定的公网 IP
 
-在 VPS 终端执行以下命令，记录网卡名、子网掩码与默认网关：
+你**只需要知道准备分配给该容器的公网 IP 地址**（例如 `198.51.100.2`）。
 
+> **无需操心复杂的网络参数**：宿主机物理网卡（如 `eth0`）、子网掩码与网段（Subnet）、默认网关（Gateway）均由安装脚本与 `dshctl` 从系统网络路由中**全自动识别与推导**，你只需要传 `--network-ip` 即可！
+
+（可选）如果想查看宿主机当前绑定的所有 IP 与网卡：
 ```bash
-# 查看默认网关与出口网卡（例如 eth0 或 ens3）
-ip -4 route show default
-
-# 查看当前网卡上的 IP 分配与掩码（例如 198.51.100.2/24）
 ip -4 addr show
 ```
-
-假设查询得到：
-- 物理网卡名：`eth0`
-- 绑定的公网 IP：`198.51.100.2`
-- 子网 CIDR：`198.51.100.0/24`
-- 网关 IP：`198.51.100.1`
 
 ### 第二步：选择部署方式
 
 #### 方式 A：使用一键安装脚本（全新一键部署，推荐）
 
-直接在终端执行一条命令，通过参数指定目录、环境变体、密码及直通网络参数：
+直接在终端执行一条命令，通过 `--network-ip` 指定要绑定的公网 IP（物理网卡、子网掩码与网关均自动探测）：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash -s -- \
@@ -59,39 +52,27 @@ curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.s
   --admin qwq \
   --password 123456 \
   --weak-password \
-  --network-mode ipvlan \
   --network-ip 198.51.100.2 \
-  --network-parent eth0 \
-  --network-subnet 198.51.100.0/24 \
-  --network-gateway 198.51.100.1 \
   --yes
 ```
 
 #### 方式 B：手动编辑已存在的 `.env` 并部署
 
-若你已克隆或存在项目目录，在根目录的 `.env` 中添加或取消注释以下配置：
+若你已克隆或存在项目目录，在根目录的 `.env` 中添加以下配置即可（网卡、网关与子网由系统自动推导，一般无需手动填写）：
 
 ```bash
 # 启用绑定公网 IP 直通模式
 DSH_NETWORK_MODE=ipvlan
 
-# 宿主机出口物理网卡名
-DSH_NETWORK_PARENT=eth0
-
 # 直接绑定给该容器的公网 IP
 DSH_NETWORK_IP=198.51.100.2
 
-# 对应的子网掩码（CIDR 格式）
-DSH_NETWORK_SUBNET=198.51.100.0/24
-
-# 默认网关 IP
-DSH_NETWORK_GATEWAY=198.51.100.1
-
-# IPVlan 工作模式（默认为 l2，二层直通）
-DSH_NETWORK_IPVLAN_MODE=l2
-
-# 同时挂载默认 bridge 网络（推荐开启：保障宿主机互通与出网容灾）
-DSH_NETWORK_ATTACH_BRIDGE=true
+# 高级可选配置（仅当默认自动推导不符合特殊网络环境时手动指定）：
+# DSH_NETWORK_PARENT=eth0
+# DSH_NETWORK_SUBNET=198.51.100.0/24
+# DSH_NETWORK_GATEWAY=198.51.100.1
+# DSH_NETWORK_IPVLAN_MODE=l2
+# DSH_NETWORK_ATTACH_BRIDGE=true
 ```
 
 通过 `dshctl` 进行校验并部署：
@@ -102,7 +83,6 @@ dshctl config validate
 
 # 2. 部署运行（dshctl 会自动选择 compose.ipvlan.yaml 启动）
 dshctl deploy
-```
 
 # 3. 查看状态
 dshctl status

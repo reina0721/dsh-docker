@@ -112,15 +112,13 @@ curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.s
 curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash -s -- \
   --dir /workapps/test/dsh-docker \
   --variant dev \
-  --network-mode ipvlan \
   --network-ip 198.51.100.2 \
-  --network-parent eth0 \
-  --network-subnet 198.51.100.0/24 \
-  --network-gateway 198.51.100.1 \
   --admin admin \
   --password 你的强密码 \
   --yes
 ```
+
+> **提示**：只需指定 `--network-ip`，物理网卡、子网掩码与默认网关均由脚本全自动检测与推导（高级用户亦可传 `--network-parent` / `--network-subnet` / `--network-gateway` 进行手动覆盖）。
 
 容器直接持有该公网 IP，内部运行的任何项目端口（3000、5173、8080 等）均可直接从外网访问。详细机制与网络排错见 [绑定公网 IP 部署指南 (docs/networking-ipvlan.md)](docs/networking-ipvlan.md)。
 
