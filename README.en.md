@@ -70,6 +70,7 @@ curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.s
 | Parameter | Default | Description |
 |---|---|---|
 | `--dir <PATH>` | `~/dsh-docker` | **Project installation root directory**. All binaries (`bin/dshctl`), Compose files (`compose.yaml`), configs (`.env`), and runtime data (`.runtime/`) are self-contained here without scattering files outside. |
+| `--container-name <NAME>` | auto-generated | **Custom container name**. Explicit Docker container name (e.g. `my-dsh`, `dsh-box`). Defaults to Compose-generated name (e.g. `dsh-docker-dsh-1`). Highly useful when hosting multiple instances on one host. |
 | `--port <PORT>` | `3080` | **Host Web port mapping**. The port where the DSH Web UI is exposed. |
 | `--bind <IP>` | `127.0.0.1` | **Listening bind IP address**. Use `127.0.0.1` for loopback (recommended behind Nginx/Caddy TLS proxy); use `0.0.0.0` for direct network access. |
 | `--variant <dev\|slim>` | `dev` | **Development environment variant**.<br>• `dev`: Full developer environment with Node, DSH, Go, Rust, pnpm, Python.<br>• `slim`: Lightweight minimal environment with Node, DSH, Git, and SSH. |

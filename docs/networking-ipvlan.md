@@ -67,6 +67,9 @@ DSH_NETWORK_MODE=ipvlan
 # 直接绑定给该容器的公网 IP
 DSH_NETWORK_IP=198.51.100.2
 
+# 自定义容器名称（可选，如 my-dsh；留空则默认自动生成）
+# DSH_CONTAINER_NAME=my-dsh
+
 # 高级可选配置（仅当默认自动推导不符合特殊网络环境时手动指定）：
 # DSH_NETWORK_PARENT=eth0
 # DSH_NETWORK_SUBNET=198.51.100.0/24

@@ -85,6 +85,7 @@ curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.s
 | 参数 | 默认值 | 说明 |
 |---|---|---|
 | `--dir <PATH>` | `~/dsh-docker` | **项目安装根目录**。所有程序（`bin/dshctl`）、编排（`compose.yaml`）、配置（`.env`）与持久化运行时数据（`.runtime/`）均独立集中存放在该目录下，严格杜绝向系统外部散落文件。 |
+| `--container-name <NAME>` | 自动生成 | **自定义容器名称**。显式指定 Docker 运行时的容器名（如 `my-dsh`、`dsh-box`）。若未指定，默认由 Docker Compose 生成（如 `dsh-docker-dsh-1`）。在同一台服务器上部署多个实例时非常实用。 |
 | `--port <PORT>` | `3080` | **宿主机 Web 访问端口映射**。DSH Web 服务对外暴露的端口。 |
 | `--bind <IP>` | `127.0.0.1` | **监听绑定地址**。设为 `127.0.0.1` 仅限本机回环访问（适合搭配外部 Nginx/Caddy 等前端反代终止 TLS）；设为 `0.0.0.0` 允许局域网或公网直接访问。 |
 | `--variant <dev\|slim>` | `dev` | **开发环境变体**。<br>• `dev`：完整开发环境，包含 Node、DSH、Go、Rust、pnpm、Python 等常用开发语言与工具。<br>• `slim`：轻量精简环境，仅包含 Node、DSH、Git、SSH 等基础依赖，后续可根据需要按需安装扩展。 |
