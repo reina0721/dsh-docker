@@ -56,6 +56,7 @@ For unattended deployment, automated scripts, or CI/CD pipelines, specify option
 ```bash
 curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash -s -- \
   --dir /workapps/test/dsh-docker \
+  --container-name my-dsh \
   --port 3080 \
   --bind 0.0.0.0 \
   --variant dev \
@@ -93,6 +94,7 @@ For details on deploying directly bound to a dedicated public IP, see [Direct Pu
 ```bash
 curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash -s -- \
   --dir /workapps/test/dsh-docker \
+  --container-name my-dsh \
   --variant dev \
   --network-ip 198.51.100.2 \
   --admin admin \

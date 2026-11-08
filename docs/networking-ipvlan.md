@@ -48,6 +48,7 @@ ip -4 addr show
 ```bash
 curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash -s -- \
   --dir /workapps/test/dsh-docker \
+  --container-name my-dsh \
   --variant dev \
   --admin qwq \
   --password 123456 \
