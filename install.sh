@@ -15,7 +15,7 @@
 set -Eeuo pipefail
 
 REPO="reina0721/dsh-docker"
-FALLBACK_VERSION="v2.0.11"
+FALLBACK_VERSION="v2.0.12"
 
 # Defaults
 TARGET_DIR="${DSHCTL_DIR:-$HOME/dsh-docker}"
@@ -26,6 +26,13 @@ CONTAINER_NAME="${DSH_CONTAINER_NAME:-}"
 CONTAINER_NAME_EXPLICIT=0
 BIND_ADDR="${BIND_ADDRESS:-127.0.0.1}"
 BIND_EXPLICIT=0
+NETWORK_MODE="${DSH_NETWORK_MODE:-bridge}"
+NETWORK_MODE_EXPLICIT=0
+NETWORK_PARENT="${DSH_NETWORK_PARENT:-}"
+NETWORK_IP="${DSH_NETWORK_IP:-}"
+NETWORK_SUBNET="${DSH_NETWORK_SUBNET:-}"
+NETWORK_GATEWAY="${DSH_NETWORK_GATEWAY:-}"
+NETWORK_IPVLAN_MODE="${DSH_NETWORK_IPVLAN_MODE:-l2}"
 VARIANT="${DSH_IMAGE_VARIANT:-dev}"
 VARIANT_EXPLICIT=0
 MIRROR_POLICY="${DSH_IMAGE_MIRROR:-global}"
@@ -61,6 +68,12 @@ DSH Docker 安装向导 (Interactive & Self-Contained Installer)
   --port PORT            Web 访问端口 (默认: 3080)
   --container-name NAME  自定义 Docker 容器名称 (默认: 自动生成)
   --bind IP              监听绑定地址 (默认: 127.0.0.1)
+  --network-mode MOD     网络模式: bridge|ipvlan|macvlan (默认: bridge)
+  --network-parent NIC   直通模式物理网卡名 (例如: eth0)
+  --network-ip IP        直通模式容器专属 IP (例如: 198.51.100.2)
+  --network-subnet CIDR  直通模式子网掩码 (例如: 198.51.100.0/24)
+  --network-gateway GW   直通模式网关 IP (例如: 198.51.100.1)
+  --network-ipvlan-mode MOD IPVlan 模式: l2|l3 (默认: l2)
   --variant dev|slim     开发环境变体 (默认: dev)
   --mirror global|cn|off 网络加速策略 (默认: global)
   --admin USER           管理员用户名 (默认: admin)
@@ -91,6 +104,12 @@ while [ $# -gt 0 ]; do
         --port) PORT="$2"; PORT_EXPLICIT=1; shift 2 ;;
         --container-name) CONTAINER_NAME="$2"; CONTAINER_NAME_EXPLICIT=1; shift 2 ;;
         --bind) BIND_ADDR="$2"; BIND_EXPLICIT=1; shift 2 ;;
+        --network-mode) NETWORK_MODE="$2"; NETWORK_MODE_EXPLICIT=1; shift 2 ;;
+        --network-parent) NETWORK_PARENT="$2"; shift 2 ;;
+        --network-ip) NETWORK_IP="$2"; [ "$NETWORK_MODE_EXPLICIT" -eq 0 ] && NETWORK_MODE="ipvlan"; shift 2 ;;
+        --network-subnet) NETWORK_SUBNET="$2"; shift 2 ;;
+        --network-gateway) NETWORK_GATEWAY="$2"; shift 2 ;;
+        --network-ipvlan-mode) NETWORK_IPVLAN_MODE="$2"; shift 2 ;;
         --variant) VARIANT="$2"; VARIANT_EXPLICIT=1; shift 2 ;;
         --mirror) MIRROR_POLICY="$2"; MIRROR_EXPLICIT=1; shift 2 ;;
         --admin) ADMIN_USER="$2"; ADMIN_USER_EXPLICIT=1; shift 2 ;;
@@ -116,6 +135,25 @@ while [ $# -gt 0 ]; do
         *) die "unknown option: $1" ;;
     esac
 done
+
+# Auto-derive network parent, gateway, and subnet when NETWORK_IP is provided
+if [ -n "$NETWORK_IP" ]; then
+    [ "$NETWORK_MODE_EXPLICIT" -eq 0 ] && NETWORK_MODE="ipvlan"
+    if command -v ip >/dev/null 2>&1; then
+        def_route="$(ip -4 route show default 2>/dev/null | head -n1 || true)"
+        if [ -z "$NETWORK_PARENT" ]; then
+            NETWORK_PARENT="$(printf '%s\n' "$def_route" | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}')"
+            [ -z "$NETWORK_PARENT" ] && NETWORK_PARENT="eth0"
+        fi
+        if [ -z "$NETWORK_GATEWAY" ]; then
+            NETWORK_GATEWAY="$(printf '%s\n' "$def_route" | awk '{for(i=1;i<=NF;i++) if($i=="via") print $(i+1)}')"
+        fi
+        if [ -z "$NETWORK_SUBNET" ]; then
+            prefix="$(printf '%s\n' "$NETWORK_IP" | cut -d. -f1-3)"
+            NETWORK_SUBNET="${prefix}.0/24"
+        fi
+    fi
+fi
 
 # Expand ~ in TARGET_DIR
 case "$TARGET_DIR" in
@@ -270,14 +308,24 @@ EOF
         done
     fi
 
-    # 3. Bind address
-    if [ "$BIND_EXPLICIT" -eq 0 ]; then
-        printf '\n[3/8] 监听绑定地址 (Bind Address)\n'
+    # 3. Bind address & Network mode
+    if [ "$BIND_EXPLICIT" -eq 0 ] && [ "$NETWORK_MODE_EXPLICIT" -eq 0 ]; then
+        printf '\n[3/8] 监听绑定与网络模式 (Network Mode & Bind Address)\n'
         printf '      1) 127.0.0.1 (推荐: 仅本机访问，适合搭配 Nginx/Caddy 等反向代理) [默认]\n'
         printf '      2) 0.0.0.0   (局域网或公网直接访问)\n'
-        prompt_input "请选择监听地址 [1/2, 默认: 1]: " "1" BIND_CHOICE
+        printf '      3) ipvlan    (直接绑定公网 IP: 容器直接持有该公网 IP，免端口映射，适合多项目动态端口)\n'
+        prompt_input "请选择监听地址/网络模式 [1/2/3, 默认: 1]: " "1" BIND_CHOICE
         case "$BIND_CHOICE" in
             2|0.0.0.0) BIND_ADDR="0.0.0.0" ;;
+            3|ipvlan)
+                NETWORK_MODE="ipvlan"
+                def_dev="$(ip -4 route show default 2>/dev/null | awk '{print $5}' | head -n1 || true)"
+                def_gw="$(ip -4 route show default 2>/dev/null | awk '{print $3}' | head -n1 || true)"
+                prompt_input "      请输入物理网卡名 [默认: ${def_dev:-eth0}]: " "${def_dev:-eth0}" NETWORK_PARENT
+                prompt_input "      请输入分配给容器的专用独立 IP: " "" NETWORK_IP
+                prompt_input "      请输入子网掩码 CIDR (例如 198.51.100.0/24): " "" NETWORK_SUBNET
+                prompt_input "      请输入网关 IP [默认: ${def_gw:-198.51.100.1}]: " "${def_gw:-198.51.100.1}" NETWORK_GATEWAY
+                ;;
             *) BIND_ADDR="127.0.0.1" ;;
         esac
     fi
@@ -440,7 +488,7 @@ if [ "$FROM_SOURCE" -eq 1 ]; then
     if [ -f target/release/dsh-entrypoint ]; then
         cp target/release/dsh-entrypoint "$TARGET_DIR/bin/dsh-entrypoint"
     fi
-    cp compose.yaml compose.build.yaml Dockerfile .env.example "$TARGET_DIR/" 2>/dev/null || true
+    cp compose.yaml compose.ipvlan.yaml compose.build.yaml Dockerfile .env.example "$TARGET_DIR/" 2>/dev/null || true
     mkdir -p "$TARGET_DIR/assets"
     cp -r assets/* "$TARGET_DIR/assets/" 2>/dev/null || true
 else
@@ -561,6 +609,14 @@ replace_env "DSH_IMAGE_MIRROR" "$MIRROR_POLICY" "$ENV_FILE"
 replace_env "AUTH_MIN_PASSWORD_LENGTH" "$MIN_PASSWORD_LEN" "$ENV_FILE"
 if [ -n "$CONTAINER_NAME" ]; then
     replace_env "DSH_CONTAINER_NAME" "$CONTAINER_NAME" "$ENV_FILE"
+fi
+replace_env "DSH_NETWORK_MODE" "$NETWORK_MODE" "$ENV_FILE"
+if [ "$NETWORK_MODE" != "bridge" ]; then
+    [ -n "$NETWORK_PARENT" ] && replace_env "DSH_NETWORK_PARENT" "$NETWORK_PARENT" "$ENV_FILE"
+    [ -n "$NETWORK_IP" ] && replace_env "DSH_NETWORK_IP" "$NETWORK_IP" "$ENV_FILE"
+    [ -n "$NETWORK_SUBNET" ] && replace_env "DSH_NETWORK_SUBNET" "$NETWORK_SUBNET" "$ENV_FILE"
+    [ -n "$NETWORK_GATEWAY" ] && replace_env "DSH_NETWORK_GATEWAY" "$NETWORK_GATEWAY" "$ENV_FILE"
+    replace_env "DSH_NETWORK_IPVLAN_MODE" "$NETWORK_IPVLAN_MODE" "$ENV_FILE"
 fi
 
 # Resolve latest upstream DSH version to prevent stale Docker build cache

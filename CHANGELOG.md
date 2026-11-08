@@ -3,6 +3,17 @@
 All notable changes are documented here. The format follows Keep a Changelog and
 the project uses Semantic Versioning.
 
+## [2.0.12] - 2026-11-09
+
+### Added
+
+- Support for dedicated public IP direct mode via Docker IPVlan (and Macvlan) without requiring port publishing (`ports:`).
+- Added `compose.ipvlan.yaml` template configured with `dsh-direct` and `default` dual-network interfaces for full zero-NAT public port access and container-host connectivity.
+- Enhanced `crates/dsh-config` with `NetworkMode` enum, validation, and automated network parameter inference (parent interface, subnet CIDR, and gateway IP auto-derived from IP).
+- Enhanced `crates/dshctl` to automatically dispatch `compose.yaml` (bridge mode) or `compose.ipvlan.yaml` (direct IP mode) based on `DSH_NETWORK_MODE`.
+- Enhanced `install.sh` with interactive IPVlan selection in step [3/8] and non-interactive `--network-*` flags with zero-config auto-inference when only `--network-ip` is passed.
+- Comprehensive dedicated public IP deployment guide (`docs/networking-ipvlan.md`) and updated full documentation suite.
+
 ## [2.0.3] - 2026-10-29
 
 ### Fixed

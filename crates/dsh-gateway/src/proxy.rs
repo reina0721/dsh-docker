@@ -119,11 +119,7 @@ impl Gateway {
                     return res;
                 }
             }
-            return text_response(
-                StatusCode::NOT_FOUND,
-                "asset not found\n",
-                HeaderMap::new(),
-            );
+            return text_response(StatusCode::NOT_FOUND, "asset not found\n", HeaderMap::new());
         }
 
         // 2. Login single page application (/login or /login/)

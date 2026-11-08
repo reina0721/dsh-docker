@@ -81,6 +81,13 @@ curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.s
 | `--mirror <global\|cn\|off>` | `global` | **Network mirror acceleration policy**. |
 | `--no-deploy` | Deploy immediately | **Extract only**. Downloads and initializes files without running Docker build/up. |
 | `--system-link` | Disabled | **Global symlink**. Optionally links `/usr/local/bin/dshctl` (disabled by default to maintain project self-containment). |
+| `--network-mode <bridge\|ipvlan\|macvlan>` | `bridge` | **Network mode**. `ipvlan` directly binds a dedicated public IP to the container, eliminating port publishing entirely so any in-container port is reachable directly. |
+| `--network-ip <IP>` | empty | **Dedicated public IP**. The public IP directly assigned to the container under `ipvlan`/`macvlan` mode. |
+| `--network-parent <NIC>` | `eth0` | **Host physical network interface** (e.g. `eth0`, `ens3`). |
+| `--network-subnet <CIDR>` | empty | **Subnet CIDR** for the dedicated IP (e.g. `198.51.100.0/24`). |
+| `--network-gateway <GW>` | empty | **Gateway IP** for the subnet (e.g. `198.51.100.1`). |
+
+For details on deploying directly bound to a dedicated public IP, see [Direct Public IP Guide (docs/networking-ipvlan.md)](docs/networking-ipvlan.md).
 
 Open `http://127.0.0.1:3080/` and sign in with Basic Auth. The gateway captures DSH's
 one-time web token (redacted in logs) and injects it until DSH sets its auth cookie;

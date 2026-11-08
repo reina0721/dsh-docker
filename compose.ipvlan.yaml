@@ -1,0 +1,81 @@
+x-dsh-docker: "2"
+
+services:
+  dsh:
+    image: "${DSH_IMAGE:-dsh-docker:local}"
+    container_name: "${DSH_CONTAINER_NAME:-${COMPOSE_PROJECT_NAME:-dsh-docker}-dsh-1}"
+    restart: unless-stopped
+    working_dir: /workspace
+    environment:
+      DSH_HOME: /home/node/.dsh
+      DSH_PERMISSION_MODE: "${DSH_PERMISSION_MODE:-workspace-write}"
+      DSH_TELEMETRY_DISABLED: "${DSH_TELEMETRY_DISABLED:-1}"
+      DSH_HTTP_COMPAT_SHIM: "${DSH_HTTP_COMPAT_SHIM:-true}"
+      DSH_PERSIST_HOME: /home/node/.persist
+      DSH_AUTH_FILE: /home/node/.dsh-auth/users.htpasswd
+      DSH_PROXY_HOST: "${DSH_PROXY_HOST:-0.0.0.0}"
+      DSH_PROXY_PORT: "${DSH_PROXY_PORT:-3080}"
+      DSH_INTERNAL_HOST: "${DSH_INTERNAL_HOST:-127.0.0.1}"
+      DSH_INTERNAL_PORT: "${DSH_INTERNAL_PORT:-3079}"
+      DSH_LOG_LEVEL: "${DSH_LOG_LEVEL:-info}"
+      DSH_LOG_FORMAT: "${DSH_LOG_FORMAT:-text}"
+      DSH_GATEWAY_MAX_HTML_BYTES: "${DSH_GATEWAY_MAX_HTML_BYTES:-8388608}"
+      AUTH_REALM: "${AUTH_REALM:-DeepSeek Harness}"
+      XDG_CONFIG_HOME: /home/node/.config
+      XDG_DATA_HOME: /home/node/.local/share
+      XDG_STATE_HOME: /home/node/.local/state
+      HISTFILE: /home/node/.bash_history
+      NODE_USE_ENV_PROXY: "${NODE_USE_ENV_PROXY:-1}"
+      HTTP_PROXY: "${HTTP_PROXY:-}"
+      HTTPS_PROXY: "${HTTPS_PROXY:-}"
+      NO_PROXY: "${NO_PROXY:-localhost,127.0.0.1,dsh}"
+    # Dedicated IP mode (IPVlan/Macvlan): No published ports; traffic reaches
+    # container directly on DSH_NETWORK_IP across any port opened inside.
+    networks:
+      dsh-direct:
+        ipv4_address: "${DSH_NETWORK_IP}"
+      default: {}
+    volumes:
+      - type: bind
+        source: "${RUNTIME_DIR:-./.runtime}/workspace"
+        target: /workspace
+      - type: bind
+        source: "${RUNTIME_DIR:-./.runtime}/dsh-home"
+        target: /home/node/.dsh
+      # Long-lived developer identity/config/credentials.
+      - type: bind
+        source: "${RUNTIME_DIR:-./.runtime}/home"
+        target: /home/node/.persist
+      # Mount the directory so an atomic user-file rename is visible without
+      # restarting the container.
+      - type: bind
+        source: "${RUNTIME_DIR:-./.runtime}/auth"
+        target: /home/node/.dsh-auth
+    expose:
+      - "3080"
+    stdin_open: true
+    tty: true
+    stop_grace_period: 20s
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/dsh-entrypoint", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  dsh-direct:
+    name: "${COMPOSE_PROJECT_NAME:-dsh-docker}-direct"
+    driver: "${DSH_NETWORK_MODE:-ipvlan}"
+    driver_opts:
+      parent: "${DSH_NETWORK_PARENT:-eth0}"
+      ipvlan_mode: "${DSH_NETWORK_IPVLAN_MODE:-l2}"
+    ipam:
+      config:
+        - subnet: "${DSH_NETWORK_SUBNET}"
+          gateway: "${DSH_NETWORK_GATEWAY}"

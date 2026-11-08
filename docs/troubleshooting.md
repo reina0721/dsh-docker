@@ -133,3 +133,19 @@ configure rootless Docker). `dshctl doctor` reports this explicitly.
 The container uses the `json-file` driver with 10 MiB × 3 rotation. `dshctl logs`
 follows the Compose service. Gateway logs include method, path, status, peer, and
 auth result; they never include the Authorization header or passwords.
+
+## IPVlan: Host cannot connect to container IP
+
+In IPVlan mode (`DSH_NETWORK_MODE=ipvlan`), the Linux kernel isolates the parent interface (`eth0`) from its child virtual interface (`ipvlan`).
+- External traffic from outside the VPS can reach the container normally.
+- However, running `curl http://<IPVLAN_IP>:3080` from the VPS host itself may time out.
+
+If the host itself needs to communicate with the container, use the container's Docker bridge IP, or configure a local host shim route on the VPS:
+
+```bash
+ip link add dsh-shim link eth0 type ipvlan mode l2
+ip addr add 198.51.100.254/32 dev dsh-shim
+ip link set dsh-shim up
+ip route add 198.51.100.2/32 dev dsh-shim
+```
+See [networking-ipvlan.md](networking-ipvlan.md) for full details.

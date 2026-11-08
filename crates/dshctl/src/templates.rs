@@ -4,6 +4,7 @@
 //! not need a source checkout (the prebuilt image path uses these directly).
 
 pub const COMPOSE_YAML: &str = include_str!("../../../compose.yaml");
+pub const COMPOSE_IPVLAN_YAML: &str = include_str!("../../../compose.ipvlan.yaml");
 pub const COMPOSE_BUILD_YAML: &str = include_str!("../../../compose.build.yaml");
 pub const DOCKERFILE: &str = include_str!("../../../Dockerfile");
 pub const ENV_EXAMPLE: &str = include_str!("../../../.env.example");

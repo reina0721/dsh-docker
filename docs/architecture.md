@@ -8,9 +8,11 @@
 | `dsh-entrypoint` | Container | PID 1 helper, persistent home setup, DSH supervision, Rust reverse proxy |
 | Rust gateway | Inside `dsh-entrypoint` | Basic Auth, Host/Origin validation, HTML compat injection, WebSocket/SSE, upstream proxy |
 | DSH | Inside image | `dsh web --host 127.0.0.1 --port 3079` |
-| Docker Compose | Host | One `dsh` service, bind mounts, port mapping, healthcheck |
+| Docker Compose | Host | One `dsh` service, bind mounts, port mapping (bridge) or dedicated direct network (ipvlan), healthcheck |
 
 ## Topology
+
+### 1. Default Bridge Mode (`compose.yaml`)
 
 ```text
 Browser
@@ -29,6 +31,26 @@ external reverse proxy (optional, TLS)
 
 Only the gateway is reachable from outside the container. DSH remains loopback-only,
 and the Compose port mapping only publishes the gateway port.
+
+### 2. Dedicated Public IP / Direct Network Mode (`compose.ipvlan.yaml`)
+
+Directly binds a dedicated public IP to the container. The container attaches to the parent NIC (e.g. `eth0`)
+with the public IP and joins Docker's default bridge network simultaneously:
+
+```text
+External Client
+  │ Direct connection (any port: 3080, 3000, 5173, 8080...)
+  ▼
+Dedicated IP (e.g. 198.51.100.2 via IPVlan L2 on eth0)
+  dsh container
+    ├── eth1: 198.51.100.2 (no NAT, direct port exposure)
+    │     ├── Rust gateway :3080
+    │     └── in-container dev apps :3000, :5173, :8080...
+    └── eth0: default bridge (outbound DNS/internet & host communication)
+```
+
+In this mode, port publishing (`ports:`) is omitted completely. Any port opened inside
+the container is reachable directly from outside. See [networking-ipvlan.md](networking-ipvlan.md).
 
 ## Request lifecycle
 

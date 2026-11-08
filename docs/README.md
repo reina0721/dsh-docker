@@ -4,6 +4,7 @@
 | --- | --- |
 | [architecture.md](architecture.md) | Components, process model, request lifecycle, design decisions |
 | [configuration.md](configuration.md) | Environment variables, defaults, image/build mirrors |
+| [networking-ipvlan.md](networking-ipvlan.md) | Dedicated Public IP mode (IPVlan/Macvlan, zero port mapping) |
 | [cli.md](cli.md) | Command reference, exit codes, JSON output |
 | [ssh-git.md](ssh-git.md) | Persistent SSH keys and Git identity |
 | [security.md](security.md) | Basic Auth, TLS boundary, credentials, supply chain |

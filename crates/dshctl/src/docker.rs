@@ -419,7 +419,13 @@ impl Docker {
     }
 
     fn compose_files(&self, build: bool) -> Result<Vec<PathBuf>> {
-        let mut files = vec![self.root.join("compose.yaml")];
+        let base_name = match self.config.network_mode {
+            dsh_config::NetworkMode::Bridge => "compose.yaml",
+            dsh_config::NetworkMode::Ipvlan | dsh_config::NetworkMode::Macvlan => {
+                "compose.ipvlan.yaml"
+            }
+        };
+        let mut files = vec![self.root.join(base_name)];
         for override_name in ["compose.override.yaml", "compose.override.yml"] {
             let candidate = self.root.join(override_name);
             if candidate.is_file() {
@@ -571,5 +577,32 @@ mod tests {
         assert_eq!(parse_json_lines(lines).len(), 2);
         let array = "[{\"Name\":\"dsh\"}]";
         assert_eq!(parse_json_lines(array).len(), 1);
+    }
+
+    #[test]
+    fn selects_compose_file_based_on_network_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+        std::fs::write(path.join("compose.yaml"), "version: '3'").unwrap();
+        std::fs::write(path.join("compose.ipvlan.yaml"), "version: '3'").unwrap();
+
+        // Default bridge mode
+        let bridge_cfg =
+            dsh_config::Config::from_map(path, std::collections::BTreeMap::new()).unwrap();
+        let bridge_docker = Docker::new(bridge_cfg, false);
+        let files = bridge_docker.compose_files(false).unwrap();
+        assert_eq!(files, vec![path.join("compose.yaml")]);
+
+        // IPVlan mode
+        let mut map = std::collections::BTreeMap::new();
+        map.insert("DSH_NETWORK_MODE".into(), "ipvlan".into());
+        map.insert("DSH_NETWORK_PARENT".into(), "eth0".into());
+        map.insert("DSH_NETWORK_IP".into(), "198.51.100.2".into());
+        map.insert("DSH_NETWORK_SUBNET".into(), "198.51.100.0/24".into());
+        map.insert("DSH_NETWORK_GATEWAY".into(), "198.51.100.1".into());
+        let ipvlan_cfg = dsh_config::Config::from_map(path, map).unwrap();
+        let ipvlan_docker = Docker::new(ipvlan_cfg, false);
+        let files = ipvlan_docker.compose_files(false).unwrap();
+        assert_eq!(files, vec![path.join("compose.ipvlan.yaml")]);
     }
 }

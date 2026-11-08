@@ -18,6 +18,20 @@ override `.env`; defaults fill the rest. Values are never sourced as shell code.
 | `DSH_HTTP_COMPAT_SHIM` | `true` | Inject `/__dsh_http_compat.js` into HTML |
 | `DSH_GATEWAY_MAX_HTML_BYTES` | `8388608` | HTML injection buffer limit |
 
+## Dedicated Public IP / Direct network mode (IPVlan / Macvlan)
+
+When directly binding a dedicated public IP to the container where developed projects listen on dynamic, unpredictable ports, direct network mode assigns the public IP to the container without requiring any port mappings. See [networking-ipvlan.md](networking-ipvlan.md) for a full guide.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `DSH_NETWORK_MODE` | `bridge` | `bridge`, `ipvlan`, or `macvlan` |
+| `DSH_NETWORK_PARENT` | `eth0` | Parent physical interface on the host |
+| `DSH_NETWORK_IP` | empty | Dedicated IP address assigned to the container (required if `ipvlan`/`macvlan`) |
+| `DSH_NETWORK_SUBNET` | empty | Subnet CIDR (e.g. `198.51.100.0/24`) |
+| `DSH_NETWORK_GATEWAY` | empty | Gateway IP for the subnet (e.g. `198.51.100.1`) |
+| `DSH_NETWORK_IPVLAN_MODE` | `l2` | `l2` (Layer 2) or `l3` (Layer 3) |
+| `DSH_NETWORK_ATTACH_BRIDGE` | `true` | Dual-attach the default bridge network for host-container communication and outbound access |
+
 ## Image delivery
 
 | Variable | Default | Notes |

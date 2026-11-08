@@ -98,6 +98,31 @@ curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.s
 | `--mirror <global\|cn\|off>` | `global` | **网络加速策略**。`cn` 模式会自动启用国内 GitHub 代理、NPM 镜像源及 Go 代理加速。 |
 | `--no-deploy` | 立即部署 | **仅初始化**。仅下载解压并完成目录与用户初始化，不立即启动 Docker 容器构建与运行。 |
 | `--system-link` | 否 | **全局软链接**。可选在 `/usr/local/bin/dshctl` 创建系统全局软链接（默认不创建，保证项目完全独立自包含）。 |
+| `--network-mode <bridge\|ipvlan\|macvlan>` | `bridge` | **网络模式**。直接绑定公网 IP 推荐 `ipvlan`，容器直接持有指定的公网 IP，彻底免除端口映射，开发任意端口均可实时外网直连。 |
+| `--network-ip <IP>` | 无 | **绑定的公网 IP**。`ipvlan`/`macvlan` 模式下直接绑定给该容器的公网 IP。 |
+| `--network-parent <NIC>` | `eth0` | **物理宿主网卡**。直通模式绑定的物理网卡名（如 `eth0`、`ens3`）。 |
+| `--network-subnet <CIDR>` | 无 | **直通模式子网 CIDR**。例如 `198.51.100.0/24`。 |
+| `--network-gateway <GW>` | 无 | **直通模式网关 IP**。例如 `198.51.100.1`。 |
+
+#### 直接绑定公网 IP 直通部署（免端口映射）
+
+如果您希望容器直接绑定某个公网 IP，并且在容器内开发时随时启动多个项目监听未知端口（免端口映射）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash -s -- \
+  --dir /workapps/test/dsh-docker \
+  --variant dev \
+  --network-mode ipvlan \
+  --network-ip 198.51.100.2 \
+  --network-parent eth0 \
+  --network-subnet 198.51.100.0/24 \
+  --network-gateway 198.51.100.1 \
+  --admin admin \
+  --password 你的强密码 \
+  --yes
+```
+
+容器直接持有该公网 IP，内部运行的任何项目端口（3000、5173、8080 等）均可直接从外网访问。详细机制与网络排错见 [绑定公网 IP 部署指南 (docs/networking-ipvlan.md)](docs/networking-ipvlan.md)。
 
 
 产物包内置了静态编译好的 `dsh-entrypoint` 容器网关，用户端通过 Docker 构建时**无需下载庞大的 Rust 编译镜像，也无需耗时编译**，1~2 分钟内即可极速完成构建与部署。

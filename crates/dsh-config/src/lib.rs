@@ -125,6 +125,41 @@ impl fmt::Display for MirrorMode {
     }
 }
 
+/// Network driver mode used by the container.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NetworkMode {
+    /// Default bridge networking with published ports.
+    Bridge,
+    /// Direct IP mode via IPVlan (container holds dedicated IP directly).
+    Ipvlan,
+    /// Direct IP mode via Macvlan (container gets dedicated virtual MAC and IP).
+    Macvlan,
+}
+
+impl FromStr for NetworkMode {
+    type Err = anyhow::Error;
+
+    fn from_str(value: &str) -> Result<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "bridge" | "default" => Ok(Self::Bridge),
+            "ipvlan" => Ok(Self::Ipvlan),
+            "macvlan" => Ok(Self::Macvlan),
+            other => bail!("DSH_NETWORK_MODE must be bridge, ipvlan or macvlan (got {other:?})"),
+        }
+    }
+}
+
+impl fmt::Display for NetworkMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Bridge => "bridge",
+            Self::Ipvlan => "ipvlan",
+            Self::Macvlan => "macvlan",
+        })
+    }
+}
+
 /// Fully validated runtime configuration.
 #[derive(Debug, Clone, Serialize)]
 pub struct Config {
@@ -157,6 +192,20 @@ pub struct Config {
     pub build_mirror: String,
     /// Explicit Docker container name (or None to use Compose default).
     pub container_name: Option<String>,
+    /// Network mode (bridge, ipvlan, macvlan).
+    pub network_mode: NetworkMode,
+    /// Parent network interface for ipvlan/macvlan (e.g. eth0).
+    pub network_parent: Option<String>,
+    /// Dedicated IPv4 address assigned to the container in direct network mode.
+    pub network_ip: Option<String>,
+    /// Subnet CIDR for direct network mode (e.g. 198.51.100.0/24).
+    pub network_subnet: Option<String>,
+    /// Gateway for direct network mode (e.g. 198.51.100.1).
+    pub network_gateway: Option<String>,
+    /// IPVlan operating mode (l2 or l3, defaults to l2).
+    pub network_ipvlan_mode: String,
+    /// Whether to also attach the default bridge network in direct network mode.
+    pub network_attach_bridge: bool,
     /// Values read from `.env` plus recognised process-environment overrides.
     pub env: BTreeMap<String, String>,
 }
@@ -236,6 +285,64 @@ impl Config {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned);
+        let network_ip = get("DSH_NETWORK_IP")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
+        let network_mode = match get("DSH_NETWORK_MODE") {
+            Some(v) => v.parse()?,
+            None => {
+                if network_ip.is_some() {
+                    NetworkMode::Ipvlan
+                } else {
+                    NetworkMode::Bridge
+                }
+            }
+        };
+        let network_parent = get("DSH_NETWORK_PARENT")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .or_else(|| {
+                if network_mode != NetworkMode::Bridge {
+                    Some("eth0".to_owned())
+                } else {
+                    None
+                }
+            });
+        let network_subnet = get("DSH_NETWORK_SUBNET")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .or_else(|| {
+                network_ip.as_ref().and_then(|ip_str| {
+                    if let Ok(IpAddr::V4(v4)) = ip_str.parse::<IpAddr>() {
+                        let oct = v4.octets();
+                        Some(format!("{}.{}.{}.0/24", oct[0], oct[1], oct[2]))
+                    } else {
+                        None
+                    }
+                })
+            });
+        let network_gateway = get("DSH_NETWORK_GATEWAY")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .or_else(|| {
+                network_ip.as_ref().and_then(|ip_str| {
+                    if let Ok(IpAddr::V4(v4)) = ip_str.parse::<IpAddr>() {
+                        let oct = v4.octets();
+                        Some(format!("{}.{}.{}.1", oct[0], oct[1], oct[2]))
+                    } else {
+                        None
+                    }
+                })
+            });
+        let network_ipvlan_mode = get("DSH_NETWORK_IPVLAN_MODE")
+            .unwrap_or("l2")
+            .trim()
+            .to_ascii_lowercase();
+        let network_attach_bridge = parse_bool(&env, "DSH_NETWORK_ATTACH_BRIDGE", true)?;
 
         let config = Self {
             project_dir,
@@ -266,6 +373,13 @@ impl Config {
             pnpm_version,
             build_mirror,
             container_name,
+            network_mode,
+            network_parent,
+            network_ip,
+            network_subnet,
+            network_gateway,
+            network_ipvlan_mode,
+            network_attach_bridge,
             env,
         };
         config.validate()?;
@@ -322,6 +436,42 @@ impl Config {
         }
         if let Some(ref name) = self.container_name {
             validate_container_name(name)?;
+        }
+        if self.network_mode != NetworkMode::Bridge {
+            let ip = self.network_ip.as_deref().unwrap_or("").trim();
+            if ip.is_empty() {
+                bail!("DSH_NETWORK_IP is required when DSH_NETWORK_MODE is not bridge");
+            }
+            ip.parse::<IpAddr>().with_context(|| {
+                format!("DSH_NETWORK_IP must be a valid IP address (got {ip:?})")
+            })?;
+
+            let parent = self.network_parent.as_deref().unwrap_or("").trim();
+            if parent.is_empty() {
+                bail!(
+                    "DSH_NETWORK_PARENT (e.g. eth0) is required when DSH_NETWORK_MODE is not bridge"
+                );
+            }
+
+            let subnet = self.network_subnet.as_deref().unwrap_or("").trim();
+            if subnet.is_empty() || !subnet.contains('/') {
+                bail!("DSH_NETWORK_SUBNET must be a CIDR subnet (e.g. 198.51.100.0/24)");
+            }
+
+            let gateway = self.network_gateway.as_deref().unwrap_or("").trim();
+            if gateway.is_empty() {
+                bail!("DSH_NETWORK_GATEWAY is required when DSH_NETWORK_MODE is not bridge");
+            }
+            gateway.parse::<IpAddr>().with_context(|| {
+                format!("DSH_NETWORK_GATEWAY must be a valid IP address (got {gateway:?})")
+            })?;
+
+            if !matches!(self.network_ipvlan_mode.as_str(), "l2" | "l3") {
+                bail!(
+                    "DSH_NETWORK_IPVLAN_MODE must be l2 or l3 (got {:?})",
+                    self.network_ipvlan_mode
+                );
+            }
         }
         if self.runtime_uid == 0 {
             // Running the container as uid 0 is allowed, but callers should be
@@ -429,6 +579,27 @@ impl Config {
         if let Some(ref name) = self.container_name {
             values.insert("DSH_CONTAINER_NAME".into(), name.clone());
         }
+        values.insert("DSH_NETWORK_MODE".into(), self.network_mode.to_string());
+        if let Some(ref parent) = self.network_parent {
+            values.insert("DSH_NETWORK_PARENT".into(), parent.clone());
+        }
+        if let Some(ref ip) = self.network_ip {
+            values.insert("DSH_NETWORK_IP".into(), ip.clone());
+        }
+        if let Some(ref subnet) = self.network_subnet {
+            values.insert("DSH_NETWORK_SUBNET".into(), subnet.clone());
+        }
+        if let Some(ref gw) = self.network_gateway {
+            values.insert("DSH_NETWORK_GATEWAY".into(), gw.clone());
+        }
+        values.insert(
+            "DSH_NETWORK_IPVLAN_MODE".into(),
+            self.network_ipvlan_mode.clone(),
+        );
+        values.insert(
+            "DSH_NETWORK_ATTACH_BRIDGE".into(),
+            self.network_attach_bridge.to_string(),
+        );
         values.into_iter().collect()
     }
 
@@ -727,16 +898,88 @@ mod tests {
         let cfg = Config::from_map(dir.path(), BTreeMap::new()).unwrap();
         assert_eq!(cfg.container_name, None);
 
-        let cfg = Config::from_map(
-            dir.path(),
-            map(&[("DSH_CONTAINER_NAME", "custom-box")]),
-        )
-        .unwrap();
+        let cfg =
+            Config::from_map(dir.path(), map(&[("DSH_CONTAINER_NAME", "custom-box")])).unwrap();
         assert_eq!(cfg.container_name.as_deref(), Some("custom-box"));
         let env_map: BTreeMap<String, String> = cfg.compose_env().into_iter().collect();
         assert_eq!(
             env_map.get("DSH_CONTAINER_NAME").map(String::as_str),
             Some("custom-box")
+        );
+    }
+
+    #[test]
+    fn network_mode_defaults_and_validation() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = Config::from_map(dir.path(), BTreeMap::new()).unwrap();
+        assert_eq!(cfg.network_mode, NetworkMode::Bridge);
+        assert_eq!(cfg.network_ip, None);
+
+        // Missing required fields for ipvlan
+        assert!(Config::from_map(dir.path(), map(&[("DSH_NETWORK_MODE", "ipvlan")])).is_err());
+
+        // Valid ipvlan config
+        let cfg = Config::from_map(
+            dir.path(),
+            map(&[
+                ("DSH_NETWORK_MODE", "ipvlan"),
+                ("DSH_NETWORK_PARENT", "eth0"),
+                ("DSH_NETWORK_IP", "198.51.100.2"),
+                ("DSH_NETWORK_SUBNET", "198.51.100.0/24"),
+                ("DSH_NETWORK_GATEWAY", "198.51.100.1"),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(cfg.network_mode, NetworkMode::Ipvlan);
+        assert_eq!(cfg.network_ip.as_deref(), Some("198.51.100.2"));
+        assert_eq!(cfg.network_parent.as_deref(), Some("eth0"));
+        assert_eq!(cfg.network_ipvlan_mode, "l2");
+        assert!(cfg.network_attach_bridge);
+
+        let env_map: BTreeMap<String, String> = cfg.compose_env().into_iter().collect();
+        assert_eq!(
+            env_map.get("DSH_NETWORK_MODE").map(String::as_str),
+            Some("ipvlan")
+        );
+        assert_eq!(
+            env_map.get("DSH_NETWORK_IP").map(String::as_str),
+            Some("198.51.100.2")
+        );
+
+        // Auto-derived parent, subnet and gateway from DSH_NETWORK_IP alone
+        let cfg = Config::from_map(dir.path(), map(&[("DSH_NETWORK_IP", "198.51.100.2")])).unwrap();
+        assert_eq!(cfg.network_mode, NetworkMode::Ipvlan);
+        assert_eq!(cfg.network_ip.as_deref(), Some("198.51.100.2"));
+        assert_eq!(cfg.network_parent.as_deref(), Some("eth0"));
+        assert_eq!(cfg.network_subnet.as_deref(), Some("198.51.100.0/24"));
+        assert_eq!(cfg.network_gateway.as_deref(), Some("198.51.100.1"));
+
+        // Invalid IP or CIDR
+        assert!(
+            Config::from_map(
+                dir.path(),
+                map(&[
+                    ("DSH_NETWORK_MODE", "ipvlan"),
+                    ("DSH_NETWORK_PARENT", "eth0"),
+                    ("DSH_NETWORK_IP", "not-an-ip"),
+                    ("DSH_NETWORK_SUBNET", "198.51.100.0/24"),
+                    ("DSH_NETWORK_GATEWAY", "198.51.100.1"),
+                ])
+            )
+            .is_err()
+        );
+        assert!(
+            Config::from_map(
+                dir.path(),
+                map(&[
+                    ("DSH_NETWORK_MODE", "ipvlan"),
+                    ("DSH_NETWORK_PARENT", "eth0"),
+                    ("DSH_NETWORK_IP", "198.51.100.2"),
+                    ("DSH_NETWORK_SUBNET", "198.51.100.0"), // Missing CIDR slash
+                    ("DSH_NETWORK_GATEWAY", "198.51.100.1"),
+                ])
+            )
+            .is_err()
         );
     }
 }

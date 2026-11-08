@@ -43,6 +43,20 @@ pub fn init(config: &Config, options: InitOptions) -> Result<()> {
         write_file(&compose, templates::COMPOSE_YAML.as_bytes(), 0o644)?;
     }
 
+    let compose_ipvlan = config.project_dir.join("compose.ipvlan.yaml");
+    if options.force || options.refresh || !compose_ipvlan.exists() {
+        if compose_ipvlan.exists() {
+            let backup = backup_path(&compose_ipvlan);
+            fs::copy(&compose_ipvlan, &backup)
+                .with_context(|| format!("failed to back up {}", compose_ipvlan.display()))?;
+        }
+        write_file(
+            &compose_ipvlan,
+            templates::COMPOSE_IPVLAN_YAML.as_bytes(),
+            0o644,
+        )?;
+    }
+
     let env_example = config.project_dir.join(".env.example");
     if legacy_compose && env_example.exists() {
         let backup = backup_path(&env_example);
@@ -360,6 +374,7 @@ mod tests {
         assert!(cfg.auth_file().is_file());
         assert!(cfg.home_dir().join("ssh").is_dir());
         assert!(cfg.project_dir.join("compose.yaml").is_file());
+        assert!(cfg.project_dir.join("compose.ipvlan.yaml").is_file());
         assert!(cfg.project_dir.join(".env").is_file());
         #[cfg(unix)]
         {

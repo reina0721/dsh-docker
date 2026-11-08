@@ -304,9 +304,7 @@ fn status_text(config: &Config, docker: &Docker, verbose: bool) -> Result<()> {
                 .get("Service")
                 .and_then(|value| value.as_str())
                 .unwrap_or("dsh");
-            let container_name = service
-                .get("Name")
-                .and_then(|value| value.as_str());
+            let container_name = service.get("Name").and_then(|value| value.as_str());
             let state = service
                 .get("State")
                 .and_then(|value| value.as_str())
@@ -327,7 +325,16 @@ fn status_text(config: &Config, docker: &Docker, verbose: bool) -> Result<()> {
         .map(|store| store.len())
         .unwrap_or(0);
     let image = config.effective_image();
-    println!("Core listen  : {}:{}", config.bind_address, config.dsh_port);
+    if config.network_mode == dsh_config::NetworkMode::Bridge {
+        println!("Core listen  : {}:{}", config.bind_address, config.dsh_port);
+    } else {
+        println!(
+            "Network mode : {} (direct IP: {}, parent: {})",
+            config.network_mode,
+            config.network_ip.as_deref().unwrap_or("?"),
+            config.network_parent.as_deref().unwrap_or("?")
+        );
+    }
     println!("Proxy URL    : {}", config_url(config));
     println!("Runtime      : {}", config.runtime_dir.display());
     println!(
@@ -581,25 +588,40 @@ fn cmd_doctor(config: &Config, verbose: bool, args: DoctorArgs) -> Result<()> {
         Err(error) => add!(Level::Fail, "auth", format!("{error:#}"), None),
     }
 
-    match port_available(config) {
-        Ok(()) => add!(
+    if config.network_mode == dsh_config::NetworkMode::Bridge {
+        match port_available(config) {
+            Ok(()) => add!(
+                Level::Ok,
+                "port",
+                format!("port {} is available", config.dsh_port),
+                None
+            ),
+            Err(_error) if docker.port_owned(config.dsh_port) => add!(
+                Level::Ok,
+                "port",
+                format!("port {} is owned by this project", config.dsh_port),
+                None,
+            ),
+            Err(error) => add!(
+                Level::Fail,
+                "port",
+                format!("{error:#}"),
+                Some("change DSH_PORT or stop the other process")
+            ),
+        }
+    } else {
+        add!(
             Level::Ok,
-            "port",
-            format!("port {} is available", config.dsh_port),
+            "network",
+            format!(
+                "direct network mode: {} (IP: {}, parent: {}, mode: {})",
+                config.network_mode,
+                config.network_ip.as_deref().unwrap_or("?"),
+                config.network_parent.as_deref().unwrap_or("?"),
+                config.network_ipvlan_mode
+            ),
             None
-        ),
-        Err(_error) if docker.port_owned(config.dsh_port) => add!(
-            Level::Ok,
-            "port",
-            format!("port {} is owned by this project", config.dsh_port),
-            None,
-        ),
-        Err(error) => add!(
-            Level::Fail,
-            "port",
-            format!("{error:#}"),
-            Some("change DSH_PORT or stop the other process")
-        ),
+        );
     }
 
     if config.runtime_dir.is_dir() {
@@ -1631,6 +1653,11 @@ fn probe_http(config: &Config) -> Result<u16> {
 }
 
 fn config_url(config: &Config) -> String {
+    if config.network_mode != dsh_config::NetworkMode::Bridge {
+        if let Some(ref ip) = config.network_ip {
+            return format!("http://{ip}:{}", config.proxy_port);
+        }
+    }
     let raw = if config.bind_address == "0.0.0.0"
         || config.bind_address == "::"
         || config.bind_address == "[::]"

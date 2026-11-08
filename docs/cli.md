@@ -11,13 +11,15 @@ dshctl [--dir DIR] [--verbose] <command>
 
 ### `init`
 
-Create `.env`, a missing `compose.yaml`, the `.runtime` tree, and permissions.
+Create `.env`, missing Compose files (`compose.yaml` and `compose.ipvlan.yaml`), the `.runtime` tree, and permissions.
 Existing files are not overwritten unless `--force` or `--refresh` is used.
 
 ### `deploy`
 
 Require Docker/Compose, initialize, ensure at least one auth user, validate Compose,
-preflight the host port, prepare the image, start the service, and wait for health.
+preflight the host port (in bridge mode), prepare the image, start the service, and wait for health.
+Automatically chooses `compose.yaml` (bridge mode) or `compose.ipvlan.yaml` (ipvlan/macvlan mode)
+based on `DSH_NETWORK_MODE`.
 Flags: `--mode auto|pull|build`, `--mirror global|cn|off`, `--slim`, `--yes`.
 
 Without a TTY and without users, deploy fails with instructions instead of
@@ -37,7 +39,7 @@ runtime paths. JSON schema:
 
 ```json
 {
-  "cli_version": "2.0.11",
+  "cli_version": "2.0.12",
   "project_dir": "...",
   "runtime_dir": "...",
   "image": "ghcr.io/reina0721/dsh-docker:2",

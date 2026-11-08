@@ -96,3 +96,9 @@ Source checkouts can use `dshctl update --source`, which refuses dirty trees.
 ## Where are my SSH keys?
 
 `.runtime/home/ssh`, linked to `~/.ssh` inside the container. Backups include them.
+
+## How do I directly bind a public IP to run development projects on arbitrary ports?
+
+Set `DSH_NETWORK_MODE=ipvlan` in `.env` (or pass `--network-mode ipvlan` to `install.sh`) and specify `DSH_NETWORK_IP`, `DSH_NETWORK_PARENT`, `DSH_NETWORK_SUBNET`, and `DSH_NETWORK_GATEWAY`.
+In this mode, Docker port publishing is omitted completely: the container directly holds the public IP, so any project or port you run inside the container (e.g. 3000, 5173, 8080) is reachable directly from outside.
+See [networking-ipvlan.md](networking-ipvlan.md) for details.
