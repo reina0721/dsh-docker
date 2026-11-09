@@ -87,7 +87,8 @@ curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.s
 |---|---|---|
 | `--dir <PATH>` | `~/dsh-docker` | **项目安装根目录**。所有程序（`bin/dshctl`）、编排（`compose.yaml`）、配置（`.env`）与持久化运行时数据（`.runtime/`）均独立集中存放在该目录下，严格杜绝向系统外部散落文件。 |
 | `--container-name <NAME>` | 自动生成 | **自定义容器名称**。显式指定 Docker 运行时的容器名（如 `my-dsh`、`dsh-box`）。若未指定，默认由 Docker Compose 生成（如 `dsh-docker-dsh-1`）。在同一台服务器上部署多个实例时非常实用。 |
-| `--port <PORT>` | `3080` | **宿主机 Web 访问端口映射**。DSH Web 服务对外暴露的端口。 |
+| `--port <PORT>` | `3080` | **Web 访问端口**。DSH Web 控制台对外访问端口。在 Bridge 桥接模式下为宿主机端口映射，在 IPVlan 直通模式下直接为该 IP 的监听端口。 |
+| `--internal-port <PORT>` | `3079` | **容器内部通信端口**。DSH 内部核心反向代理回环端口。若 `--port` 设置为 `3079`，系统会自动偏移至 `3078` 防止同端口冲突。 |
 | `--bind <IP>` | `127.0.0.1` | **监听绑定地址**。设为 `127.0.0.1` 仅限本机回环访问（适合搭配外部 Nginx/Caddy 等前端反代终止 TLS）；设为 `0.0.0.0` 允许局域网或公网直接访问。 |
 | `--variant <dev\|slim>` | `dev` | **开发环境变体**。<br>• `dev`：完整开发环境，包含 Node、DSH、Go、Rust、pnpm、Python 等常用开发语言与工具。<br>• `slim`：轻量精简环境，仅包含 Node、DSH、Git、SSH 等基础依赖，后续可根据需要按需安装扩展。 |
 | `--admin <USER>` | `admin` | **管理员 Basic Auth 用户名**。登录 Web 界面所使用的账号名称。 |
@@ -124,6 +125,27 @@ curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.s
 > **提示**：只需指定 `--network-ip`，物理网卡、子网掩码与默认网关均由脚本全自动检测与推导（高级用户亦可传 `--network-parent` / `--network-subnet` / `--network-gateway` 进行手动覆盖）。
 
 容器直接持有该公网 IP，内部运行的任何项目端口（3000、5173、8080 等）均可直接从外网访问。详细机制与网络排错见 [绑定公网 IP 部署指南 (docs/networking-ipvlan.md)](docs/networking-ipvlan.md)。
+
+#### 同服务器多实例共存与端口防冲突
+
+若您在同一台宿主机上部署多个 `dsh-docker` 项目，或者宿主机本身已运行了其他 Web 服务（如 Nginx 占用了 80/443、其他程序占用了 3080）：
+
+1. **单公网 IP 服务器（避免与宿主机端口冲突）**：
+   - 采用 **Bridge 桥接模式**，显式指定不同的宿主机端口 `--port <自定义端口>`（例如 `--port 8088`）以及自定义容器名 `--container-name <自定义名称>`：
+     ```bash
+     curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash -s -- \
+       --dir /workapps/dsh-app2 \
+       --container-name dsh-app2 \
+       --port 8088 \
+       --admin admin \
+       --password 你的强密码 \
+       --yes
+     ```
+   - 宿主机原有的 80、443、3080 等所有端口完全不受影响，两个实例完全并行。
+
+2. **直通模式自定义 Web 端口**：
+   - 绑定独立公网 IP 时，该 IP 的端口与宿主机其他 IP 之间**天然隔离**。您同样可以通过 `--port <PORT>` 指定 DSH Web 控制台端口（如 `--port 8888`），防止容器内开发的项目也刚好要用 3080。若 `--port` 设为 `3079`，内部核心端口会自动规避调整为 `3078`。
+
 
 
 产物包内置了静态编译好的 `dsh-entrypoint` 容器网关，用户端通过 Docker 构建时**无需下载庞大的 Rust 编译镜像，也无需耗时编译**，1~2 分钟内即可极速完成构建与部署。

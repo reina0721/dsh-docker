@@ -22,6 +22,8 @@ TARGET_DIR="${DSHCTL_DIR:-$HOME/dsh-docker}"
 TARGET_DIR_EXPLICIT=0
 PORT="${DSH_PORT:-3080}"
 PORT_EXPLICIT=0
+INTERNAL_PORT="${DSH_INTERNAL_PORT:-}"
+INTERNAL_PORT_EXPLICIT=0
 CONTAINER_NAME="${DSH_CONTAINER_NAME:-}"
 CONTAINER_NAME_EXPLICIT=0
 BIND_ADDR="${BIND_ADDRESS:-127.0.0.1}"
@@ -65,7 +67,8 @@ DSH Docker 安装向导 (Interactive & Self-Contained Installer)
 
 选项:
   --dir DIR              项目安装目录 (默认: ~/dsh-docker)
-  --port PORT            Web 访问端口 (默认: 3080)
+  --port PORT            Web 访问端口 (默认: 3080，桥接与直通模式均生效)
+  --internal-port PORT   容器内部核心端口 (默认: 3079，与 Web 端口冲突时自动偏移)
   --container-name NAME  自定义 Docker 容器名称 (默认: 自动生成)
   --bind IP              监听绑定地址 (默认: 127.0.0.1)
   --network-mode MOD     网络模式: bridge|ipvlan|macvlan (默认: bridge)
@@ -102,6 +105,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --dir) TARGET_DIR="$2"; TARGET_DIR_EXPLICIT=1; shift 2 ;;
         --port) PORT="$2"; PORT_EXPLICIT=1; shift 2 ;;
+        --internal-port) INTERNAL_PORT="$2"; INTERNAL_PORT_EXPLICIT=1; shift 2 ;;
         --container-name) CONTAINER_NAME="$2"; CONTAINER_NAME_EXPLICIT=1; shift 2 ;;
         --bind) BIND_ADDR="$2"; BIND_EXPLICIT=1; shift 2 ;;
         --network-mode) NETWORK_MODE="$2"; NETWORK_MODE_EXPLICIT=1; shift 2 ;;
@@ -601,6 +605,12 @@ replace_env() {
 }
 
 replace_env "DSH_PORT" "$PORT" "$ENV_FILE"
+replace_env "DSH_PROXY_PORT" "$PORT" "$ENV_FILE"
+if [ -n "$INTERNAL_PORT" ]; then
+    replace_env "DSH_INTERNAL_PORT" "$INTERNAL_PORT" "$ENV_FILE"
+elif [ "$PORT" = "3079" ]; then
+    replace_env "DSH_INTERNAL_PORT" "3078" "$ENV_FILE"
+fi
 replace_env "BIND_ADDRESS" "$BIND_ADDR" "$ENV_FILE"
 replace_env "DSH_IMAGE_VARIANT" "$VARIANT" "$ENV_FILE"
 replace_env "DSH_IMAGE_MODE" "build" "$ENV_FILE"

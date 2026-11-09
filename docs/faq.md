@@ -68,8 +68,9 @@ you can add a user without losing the session. Run `dshctl user add`.
 
 ## How do I change the port?
 
-Set `DSH_PORT` in `.env`; the gateway port inside the container stays 3080 unless you
-also change `DSH_PROXY_PORT`. Then `dshctl up` / `dshctl deploy`.
+Set `DSH_PORT` in `.env` (or pass `--port <PORT>` to `install.sh`).
+In Bridge mode, it changes the published host port. In IPVlan mode, `DSH_PROXY_PORT` automatically defaults to `DSH_PORT`.
+Then run `dshctl deploy` to apply.
 
 ## How do I update?
 

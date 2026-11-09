@@ -144,3 +144,32 @@ Linux 内核出于安全隔离设计，**默认禁止宿主机物理网卡与其
 建议：
 - 不要在容器内使用默认无密码的数据库或敏感服务；
 - 如需限制访问，可在 VPS 宿主机使用 `nftables`/`iptables` 或云厂商安全组只对可信源 IP 放行特定开发端口。
+
+### 3. 宿主机端口冲突防范与多实例部署
+
+#### Q: 万一宿主机上的服务也使用了某些端口，会和 dsh-docker 冲突吗？
+- **绑定独立公网 IP 时（IPVlan 模式）**：
+  - 宿主机的公网 IP（例如 `1.1.1.1`）与容器绑定的公网 IP（例如 `1.1.1.2`）在网络层完全解耦；
+  - 宿主机上运行的 Nginx（80/443）、其他服务（3080）与容器内的端口**物理隔离、互不冲突**；
+  - 同时，DSH Web 控制台端口可通过 `--port <PORT>` 自由自定义（例如 `--port 8888`），防止与容器内开发的项目产生端口竞争。
+- **宿主机只有 1 个公网 IP 时（单 IP 服务器）**：
+  - Linux 内核不允许在同一个物理网卡上用 IPVlan 与宿主机抢占相同的单 IP；
+  - 请使用 **Bridge 桥接模式**，通过 `--port <未占用端口>`（例如 `--port 8088`）将 Web 端口映射到宿主机空闲端口，完全避开宿主机已有的 80/443 等服务。
+
+#### Q: 同一台服务器部署多个 dsh-docker 实例如何配置？
+为每一个实例指定独立的安装路径、容器名称与端口即可完美共存：
+```bash
+# 部署实例 1
+curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash -s -- \
+  --dir /workapps/dsh-instance-1 \
+  --container-name dsh-inst1 \
+  --port 3080 \
+  --yes
+
+# 部署实例 2
+curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.sh | bash -s -- \
+  --dir /workapps/dsh-instance-2 \
+  --container-name dsh-inst2 \
+  --port 3081 \
+  --yes
+```

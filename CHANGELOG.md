@@ -9,6 +9,9 @@ the project uses Semantic Versioning.
 
 - Support for dedicated public IP direct mode via Docker IPVlan (and Macvlan) without requiring port publishing (`ports:`).
 - Added `compose.ipvlan.yaml` template configured with `dsh-direct` and `default` dual-network interfaces for full zero-NAT public port access and container-host connectivity.
+- Added full support for Web port customization (`--port`) in IPVlan direct mode, synchronizing `DSH_PORT` and `DSH_PROXY_PORT`.
+- Added `--internal-port` option and automated port collision avoidance (auto-shifting default internal port to 3078 when Web port is 3079).
+- Added explicit `--container-name` parameter in `install.sh` and documentation for multi-instance coexistence.
 - Enhanced `crates/dsh-config` with `NetworkMode` enum, validation, and automated network parameter inference (parent interface, subnet CIDR, and gateway IP auto-derived from IP).
 - Enhanced `crates/dshctl` to automatically dispatch `compose.yaml` (bridge mode) or `compose.ipvlan.yaml` (direct IP mode) based on `DSH_NETWORK_MODE`.
 - Enhanced `install.sh` with interactive IPVlan selection in step [3/8] and non-interactive `--network-*` flags with zero-config auto-inference when only `--network-ip` is passed.

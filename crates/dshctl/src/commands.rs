@@ -1589,6 +1589,9 @@ fn random_password() -> Result<String> {
 }
 
 fn preflight_port(config: &Config, docker: &Docker) -> Result<()> {
+    if config.network_mode != dsh_config::NetworkMode::Bridge {
+        return Ok(());
+    }
     match port_available(config) {
         Ok(()) => Ok(()),
         Err(_) if docker.port_owned(config.dsh_port) => {
@@ -1616,6 +1619,7 @@ fn port_available(config: &Config) -> Result<()> {
 fn wait_health(config: &Config) -> Result<()> {
     let url = config_url(config);
     let mut last_error = None;
+    let docker_client = docker(config, false);
     for _ in 0..90 {
         match probe_http(config) {
             Ok(200 | 302 | 401) => {
@@ -1625,6 +1629,21 @@ fn wait_health(config: &Config) -> Result<()> {
             Ok(code) => last_error = Some(anyhow::anyhow!("HTTP {code}")),
             Err(error) => last_error = Some(error),
         }
+        // In direct network mode (ipvlan/macvlan), the host kernel may isolate
+        // traffic to the container IP directly. Fall back to Docker's internal health check.
+        if config.network_mode != dsh_config::NetworkMode::Bridge {
+            if let Ok(services) = docker_client.ps() {
+                if services.iter().any(|s| {
+                    s.get("Health")
+                        .and_then(|h| h.as_str())
+                        .map(|h| h == "healthy")
+                        .unwrap_or(false)
+                }) {
+                    println!("Health check OK (container healthy): {url}");
+                    return Ok(());
+                }
+            }
+        }
         std::thread::sleep(Duration::from_secs(1));
     }
     Err(last_error.unwrap_or_else(|| anyhow::anyhow!("health check timed out")))
@@ -1632,19 +1651,27 @@ fn wait_health(config: &Config) -> Result<()> {
 }
 
 fn probe_http(config: &Config) -> Result<u16> {
-    let host = if config.bind_address == "0.0.0.0"
-        || config.bind_address == "::"
-        || config.bind_address == "[::]"
-    {
-        "127.0.0.1".to_owned()
-    } else if config.bind_address.starts_with('[') {
-        config.bind_address.clone()
-    } else if config.bind_address.contains(':') {
-        format!("[{}]", config.bind_address)
+    let url = if config.network_mode != dsh_config::NetworkMode::Bridge {
+        if let Some(ref ip) = config.network_ip {
+            format!("http://{ip}:{}/", config.proxy_port)
+        } else {
+            format!("http://127.0.0.1:{}/", config.dsh_port)
+        }
     } else {
-        config.bind_address.clone()
+        let host = if config.bind_address == "0.0.0.0"
+            || config.bind_address == "::"
+            || config.bind_address == "[::]"
+        {
+            "127.0.0.1".to_owned()
+        } else if config.bind_address.starts_with('[') {
+            config.bind_address.clone()
+        } else if config.bind_address.contains(':') {
+            format!("[{}]", config.bind_address)
+        } else {
+            config.bind_address.clone()
+        };
+        format!("http://{host}:{}/", config.dsh_port)
     };
-    let url = format!("http://{host}:{}/", config.dsh_port);
     match http_agent().get(&url).call() {
         Ok(response) => Ok(response.status()),
         Err(ureq::Error::Status(code, _)) => Ok(code),

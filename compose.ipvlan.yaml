@@ -14,7 +14,7 @@ services:
       DSH_PERSIST_HOME: /home/node/.persist
       DSH_AUTH_FILE: /home/node/.dsh-auth/users.htpasswd
       DSH_PROXY_HOST: "${DSH_PROXY_HOST:-0.0.0.0}"
-      DSH_PROXY_PORT: "${DSH_PROXY_PORT:-3080}"
+      DSH_PROXY_PORT: "${DSH_PROXY_PORT:-${DSH_PORT:-3080}}"
       DSH_INTERNAL_HOST: "${DSH_INTERNAL_HOST:-127.0.0.1}"
       DSH_INTERNAL_PORT: "${DSH_INTERNAL_PORT:-3079}"
       DSH_LOG_LEVEL: "${DSH_LOG_LEVEL:-info}"
@@ -52,7 +52,7 @@ services:
         source: "${RUNTIME_DIR:-./.runtime}/auth"
         target: /home/node/.dsh-auth
     expose:
-      - "3080"
+      - "${DSH_PROXY_PORT:-${DSH_PORT:-3080}}"
     stdin_open: true
     tty: true
     stop_grace_period: 20s

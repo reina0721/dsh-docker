@@ -10,9 +10,9 @@ override `.env`; defaults fill the rest. Values are never sourced as shell code.
 | `RUNTIME_DIR` | `./.runtime` | Relative to the project directory |
 | `RUNTIME_UID` / `RUNTIME_GID` | `1000` | Used for chown when running as root |
 | `BIND_ADDRESS` | `127.0.0.1` | Host bind IP; bracket IPv6 (`[::1]`) in `.env` |
-| `DSH_PORT` | `3080` | Published host port |
-| `DSH_PROXY_PORT` | `3080` | Gateway port inside the container |
-| `DSH_INTERNAL_HOST` / `DSH_INTERNAL_PORT` | `127.0.0.1` / `3079` | DSH loopback |
+| `DSH_PORT` | `3080` | Published Web port (host port in bridge mode, direct container listen port in IPVlan mode) |
+| `DSH_PROXY_PORT` | `3080` | Gateway port inside the container (defaults to `DSH_PORT` if omitted) |
+| `DSH_INTERNAL_HOST` / `DSH_INTERNAL_PORT` | `127.0.0.1` / `3079` | DSH loopback (auto-shifts to 3078 if DSH_PROXY_PORT is 3079) |
 | `DSH_LOG_LEVEL` | `info` | `trace`, `debug`, `info`, `warn`, `error` |
 | `DSH_LOG_FORMAT` | `text` | `text` or `json` |
 | `DSH_HTTP_COMPAT_SHIM` | `true` | Inject `/__dsh_http_compat.js` into HTML |

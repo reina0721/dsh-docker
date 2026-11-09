@@ -72,7 +72,8 @@ curl -fsSL https://raw.githubusercontent.com/reina0721/dsh-docker/main/install.s
 |---|---|---|
 | `--dir <PATH>` | `~/dsh-docker` | **Project installation root directory**. All binaries (`bin/dshctl`), Compose files (`compose.yaml`), configs (`.env`), and runtime data (`.runtime/`) are self-contained here without scattering files outside. |
 | `--container-name <NAME>` | auto-generated | **Custom container name**. Explicit Docker container name (e.g. `my-dsh`, `dsh-box`). Defaults to Compose-generated name (e.g. `dsh-docker-dsh-1`). Highly useful when hosting multiple instances on one host. |
-| `--port <PORT>` | `3080` | **Host Web port mapping**. The port where the DSH Web UI is exposed. |
+| `--port <PORT>` | `3080` | **Web access port**. The port where the DSH Web UI is exposed. Mapped from host in Bridge mode, or listened on directly in IPVlan mode. |
+| `--internal-port <PORT>` | `3079` | **Container internal port**. Reverse proxy loopback port between the gateway and DSH core. If `--port` is set to `3079`, auto-shifts to `3078` to prevent collision. |
 | `--bind <IP>` | `127.0.0.1` | **Listening bind IP address**. Use `127.0.0.1` for loopback (recommended behind Nginx/Caddy TLS proxy); use `0.0.0.0` for direct network access. |
 | `--variant <dev\|slim>` | `dev` | **Development environment variant**.<br>• `dev`: Full developer environment with Node, DSH, Go, Rust, pnpm, Python.<br>• `slim`: Lightweight minimal environment with Node, DSH, Git, and SSH. |
 | `--admin <USER>` | `admin` | **Administrator Basic Auth username**. |

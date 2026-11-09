@@ -248,13 +248,47 @@ impl Config {
         };
 
         let bind_address = get("BIND_ADDRESS").unwrap_or("127.0.0.1").trim().to_owned();
+        let network_ip = get("DSH_NETWORK_IP")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
+        let network_mode = match get("DSH_NETWORK_MODE") {
+            Some(v) => v.parse()?,
+            None => {
+                if network_ip.is_some() {
+                    NetworkMode::Ipvlan
+                } else {
+                    NetworkMode::Bridge
+                }
+            }
+        };
         let dsh_port = parse_u16(&env, "DSH_PORT", 3080)?;
-        let proxy_port = parse_u16(&env, "DSH_PROXY_PORT", 3080)?;
+        let proxy_port_raw = parse_u16(&env, "DSH_PROXY_PORT", 3080)?;
+        let proxy_port = if network_mode != NetworkMode::Bridge {
+            if env.contains_key("DSH_PROXY_PORT") && proxy_port_raw != 3080 {
+                proxy_port_raw
+            } else if dsh_port != 3080 {
+                dsh_port
+            } else {
+                proxy_port_raw
+            }
+        } else {
+            proxy_port_raw
+        };
         let internal_host = get("DSH_INTERNAL_HOST")
             .unwrap_or("127.0.0.1")
             .trim()
             .to_owned();
-        let internal_port = parse_u16(&env, "DSH_INTERNAL_PORT", 3079)?;
+        let mut internal_port = parse_u16(&env, "DSH_INTERNAL_PORT", 3079)?;
+        if proxy_port == internal_port {
+            if !env.contains_key("DSH_INTERNAL_PORT") {
+                internal_port = if proxy_port == 3079 { 3078 } else { 3079 };
+            } else {
+                bail!(
+                    "DSH_PROXY_PORT and DSH_INTERNAL_PORT must differ (both set to {proxy_port})"
+                );
+            }
+        }
         let image = get("DSH_IMAGE").unwrap_or(DEFAULT_IMAGE).trim().to_owned();
         let image_mode = get("DSH_IMAGE_MODE").unwrap_or("build").parse()?;
         let image_variant = get("DSH_IMAGE_VARIANT").unwrap_or("dev").parse()?;
@@ -285,20 +319,6 @@ impl Config {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned);
-        let network_ip = get("DSH_NETWORK_IP")
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned);
-        let network_mode = match get("DSH_NETWORK_MODE") {
-            Some(v) => v.parse()?,
-            None => {
-                if network_ip.is_some() {
-                    NetworkMode::Ipvlan
-                } else {
-                    NetworkMode::Bridge
-                }
-            }
-        };
         let network_parent = get("DSH_NETWORK_PARENT")
             .map(str::trim)
             .filter(|value| !value.is_empty())
@@ -978,6 +998,42 @@ mod tests {
                     ("DSH_NETWORK_SUBNET", "198.51.100.0"), // Missing CIDR slash
                     ("DSH_NETWORK_GATEWAY", "198.51.100.1"),
                 ])
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn test_port_customization_and_internal_collision_avoidance() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // 1. In IPVlan mode, DSH_PORT=8080 automatically customizes proxy_port
+        let cfg = Config::from_map(
+            dir.path(),
+            map(&[
+                ("DSH_NETWORK_IP", "198.51.100.2"),
+                ("DSH_PORT", "8080"),
+                ("DSH_PROXY_PORT", "3080"), // Even if template had 3080
+            ]),
+        )
+        .unwrap();
+        assert_eq!(cfg.proxy_port, 8080);
+        assert_eq!(cfg.internal_port, 3079);
+
+        // 2. If user sets port 3079 (which equals internal port 3079), auto-shift internal to 3078
+        let cfg = Config::from_map(
+            dir.path(),
+            map(&[("DSH_NETWORK_IP", "198.51.100.2"), ("DSH_PORT", "3079")]),
+        )
+        .unwrap();
+        assert_eq!(cfg.proxy_port, 3079);
+        assert_eq!(cfg.internal_port, 3078);
+
+        // 3. If user explicitly sets both DSH_PROXY_PORT and DSH_INTERNAL_PORT to the same port, it errors
+        assert!(
+            Config::from_map(
+                dir.path(),
+                map(&[("DSH_PROXY_PORT", "8080"), ("DSH_INTERNAL_PORT", "8080"),]),
             )
             .is_err()
         );

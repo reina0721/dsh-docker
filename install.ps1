@@ -237,6 +237,10 @@ try {
     if (Test-Path $envFile) {
         $content = Get-Content $envFile -Raw
         $content = $content -replace '(?m)^DSH_PORT=.*', "DSH_PORT=$Port"
+        $content = $content -replace '(?m)^DSH_PROXY_PORT=.*', "DSH_PROXY_PORT=$Port"
+        if ($Port -eq '3079') {
+            $content = $content -replace '(?m)^DSH_INTERNAL_PORT=.*', "DSH_INTERNAL_PORT=3078"
+        }
         $content = $content -replace '(?m)^BIND_ADDRESS=.*', "BIND_ADDRESS=$Bind"
         $content = $content -replace '(?m)^DSH_IMAGE_VARIANT=.*', "DSH_IMAGE_VARIANT=$Variant"
         $content = $content -replace '(?m)^DSH_IMAGE_MODE=.*', "DSH_IMAGE_MODE=build"
